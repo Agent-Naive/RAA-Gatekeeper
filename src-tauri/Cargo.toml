@@ -1,16 +1,11 @@
 [package]
 name = "raa-gatekeeper"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Read-only security auditor for AI-assisted development"
+authors = ["Agent-Naive"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "raa_gatekeeper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -18,10 +13,18 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Core Tauri
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+
+# Data & Security
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-fs = "2.5.1"
-tauri-plugin-dialog = "2.7.1"
+sha2 = "0.10"
+dotenvy = "0.15"
 
+# Networking (The AI Cogs)
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
