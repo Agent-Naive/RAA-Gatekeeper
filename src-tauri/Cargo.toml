@@ -25,3 +25,4 @@ reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 walkdir = "2"
 chrono = "0.4"
+zip = "8.6.0"
