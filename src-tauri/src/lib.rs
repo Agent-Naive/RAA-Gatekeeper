@@ -1,9 +1,3 @@
-// Learn more about Tauri commands at https://tauri.app
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 #[tauri::command]
 fn audit_command(command_str: String) -> Result<String, String> {
     // RAA Logic: Identify destructive or unauthorized command patterns
@@ -33,11 +27,32 @@ fn audit_command(command_str: String) -> Result<String, String> {
     Ok("Command Safe.".into())
 }
 
+#[tauri::command]
+fn scan_file_integrity(file_path: String) -> Result<String, String> {
+    // Attempt to read the file content
+    match std::fs::read_to_string(&file_path) {
+        Ok(content) => {
+            // Check for AI hijacking trigger
+            if content.contains("IGNORE PREVIOUS INSTRUCTIONS") {
+                return Err("RAA THREAT: Agent Hijacking prompt detected!".into());
+            }
+            // If content is readable as UTF-8 and doesn't contain threats, certify it
+            Ok("File RAA-Certified: Safe for AI Context.".into())
+        }
+        Err(_) => {
+            // If file can't be read as UTF-8, it might be binary data
+            Err("RAA THREAT: Binary data detected in text context!".into())
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, audit_command])
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![audit_command, scan_file_integrity])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
