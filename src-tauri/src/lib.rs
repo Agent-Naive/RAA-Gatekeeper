@@ -7,9 +7,29 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn audit_command(command_str: String) -> Result<String, String> {
     // RAA Logic: Identify destructive or unauthorized command patterns
-    if command_str.contains("rm -rf") || command_str.contains("*") || command_str.contains("sudo") {
-        return Err("RAA Security Violation: Destructive or unauthorized command detected.".into());
+    let destructive_prefixes = vec!["rm", "mv", "delete"];
+    let command_lower = command_str.to_lowercase();
+
+    // Check for sudo usage - always a violation
+    if command_lower.contains("sudo") {
+        return Err("RAA Security Violation: Use of 'sudo' is not permitted.".into());
     }
+
+    // Split the command string to check the first word
+    let first_word = command_str.split_whitespace().next().unwrap_or("");
+    let is_destructive = destructive_prefixes.iter().any(|prefix| first_word.starts_with(prefix));
+
+    // Check if command starts with destructive prefix and contains wildcard
+    if is_destructive && command_lower.contains('*') {
+        return Err("RAA Security Violation: Destructive command with wildcard detected.".into());
+    }
+
+    // Non-destructive commands with wildcard are considered safe for observation
+    if command_lower.contains('*') {
+        return Ok("Command Safe (Observation Only).".into());
+    }
+
+    // Default case for commands without wildcards
     Ok("Command Safe.".into())
 }
 
