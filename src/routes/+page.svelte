@@ -1,152 +1,122 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { open } from "@tauri-apps/plugin-dialog";
 
-  let command = $state("");
-  let resultMsg = $state("");
-  let isError = $state(false);
+  // Navigation State (using Svelte 5 Runes)
+  let activeTab = $state("audit"); 
 
-  async function audit(event: Event) {
-    event.preventDefault();
+  // Audit State
+  let commandInput = $state("");
+  let auditMsg = $state("");
+  let isAuditError = $state(false);
+
+  // Analyze State
+  let scanMsg = $state("");
+  let isScanError = $state(false);
+
+  // Certify State
+  let certMsg = $state("");
+  let isCertError = $state(false);
+
+  async function handleAudit() {
     try {
-      // Changed 'command' to 'commandStr' to match Rust's 'command_str'
-      const result = await invoke<string>("audit_command", { commandStr: command });
-      
-      // Update logic to check for our specific Rust success message
-      resultMsg = result;
-      isError = false; 
-    } catch (error) {
-      // Tauri returns Rust 'Err' results into this catch block
-      resultMsg = String(error);
-      isError = true;
+      auditMsg = await invoke("audit_command", { commandStr: commandInput });
+      isAuditError = false;
+    } catch (err) {
+      auditMsg = String(err);
+      isAuditError = true;
+    }
+  }
+
+  async function handleBrowseFile() {
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'RAA-Files', extensions: ['md', 'txt', 'raa', 'json'] }]
+      });
+      if (selected) {
+        scanMsg = await invoke("scan_file_integrity", { filePath: selected });
+        isScanError = false;
+      }
+    } catch (err) {
+      scanMsg = String(err);
+      isScanError = true;
+    }
+  }
+
+  async function handleCertifyFolder() {
+    try {
+      const selectedFolder = await open({ directory: true, multiple: false });
+      if (selectedFolder) {
+        certMsg = await invoke("generate_manifest", { folderPath: selectedFolder });
+        isCertError = false;
+      }
+    } catch (err) {
+      certMsg = String(err);
+      isCertError = true;
     }
   }
 </script>
 
-<main class="container">
-  <h1>RAA Gatekeeper</h1>
-  <p>Enter a terminal command to audit for RAA compliance.</p>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="brand">RAA</div>
+    <button class:active={activeTab === 'audit'} onclick={() => activeTab = 'audit'}>
+      Audit Command
+    </button>
+    <button class:active={activeTab === 'analyze'} onclick={() => activeTab = 'analyze'}>
+      Analyze File
+    </button>
+    <button class:active={activeTab === 'certify'} onclick={() => activeTab = 'certify'}>
+      Certify Project
+    </button>
+    <div class="version-seal">v0.1.0-ALPHA</div>
+  </aside>
 
-  <form class="row" onsubmit={audit}>
-    <input id="command-input" placeholder="Enter terminal command..." bind:value={command} />
-    <button type="submit">Audit</button>
-  </form>
+  <main class="content-pane">
+    {#if activeTab === 'audit'}
+      <h2>Shell-Check Auditor</h2>
+      <div class="tool-box">
+        <input 
+          bind:value={commandInput} 
+          placeholder="e.g. ls *.txt" 
+          autocapitalize="none"
+          autocorrect="off"
+          spellcheck="false"
+        />
+        <button onclick={handleAudit}>Check Command</button>
+      </div>
+      {#if auditMsg}<div class="result-bar" class:error={isAuditError}>{auditMsg}</div>{/if}
 
-  {#if resultMsg}
-    <div class="result-box" class:error={isError}>
-      {resultMsg}
-    </div>
-  {/if}
-</main>
+    {:else if activeTab === 'analyze'}
+      <h2>File Integrity Scanner</h2>
+      <div class="tool-box">
+        <button class="primary-btn" onclick={handleBrowseFile}>Browse & Scan File</button>
+      </div>
+      {#if scanMsg}<div class="result-bar" class:error={isScanError}>{scanMsg}</div>{/if}
+
+    {:else if activeTab === 'certify'}
+      <h2>Project Manifest Generator</h2>
+      <div class="tool-box">
+        <button class="primary-btn" onclick={handleCertifyFolder}>Select Folder & Certify</button>
+      </div>
+      {#if certMsg}<div class="result-bar" class:error={isCertError}>{certMsg}</div>{/if}
+    {/if}
+  </main>
+</div>
 
 <style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.row {
-  display: flex;
-  justify-content: center;
-}
-
-h1 {
-  text-align: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#command-input {
-  margin-right: 5px;
-  width: 300px;
-}
-
-.result-box {
-  margin-top: 20px;
-  padding: 10px;
-  border-radius: 5px;
-  font-weight: bold;
-}
-
-.result-box.error {
-  background-color: #ffcccc;
-  color: #cc0000;
-}
-
-.result-box:not(.error) {
-  background-color: #ccffcc;
-  color: #006600;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-
-  .result-box.error {
-    background-color: #cc000033;
-    color: #ff6666;
-  }
-
-  .result-box:not(.error) {
-    background-color: #00660033;
-    color: #66cc66;
-  }
-}
+  .app-layout { display: flex; height: 100vh; font-family: sans-serif; }
+  .sidebar { width: 200px; background: #121212; color: #fff; padding: 20px; display: flex; flex-direction: column; gap: 8px; }
+  .brand { font-size: 24px; font-weight: 800; margin-bottom: 30px; color: #396cd8; }
+  .sidebar button { background: transparent; border: none; color: #888; text-align: left; padding: 12px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+  .sidebar button.active { background: #222; color: #fff; border-left: 3px solid #396cd8; }
+  .content-pane { flex: 1; padding: 40px; background: #fdfdfd; color: #1a1a1a; }
+  .tool-box { display: flex; gap: 10px; margin: 20px 0; justify-content: center; }
+  input { flex: 1; max-width: 400px; padding: 12px; border-radius: 8px; border: 1px solid #ddd; }
+  button { background: #396cd8; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+  .result-bar { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; background: #e6fffa; color: #234e52; }
+  .result-bar.error { background: #fff5f5; color: #c53030; }
+  @media (prefers-color-scheme: dark) { .content-pane { background: #1e1e1e; color: #eee; } input { background: #2a2a2a; border-color: #444; color: white; } }
 </style>
