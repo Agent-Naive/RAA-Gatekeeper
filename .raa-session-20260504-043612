@@ -1,23 +1,24 @@
 
 --- RAA FULL PROJECT CERTIFICATION ---
-Timestamp: 2026-05-04 02:37:38
-File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-certify-projects/project1/tauri.conf.json | Hash: f2e2c0b4e33a4175ee7d359ca6b48b929d346e7e1ffc9fed3a63995763465a0f | AI: RAA VIOLATION: CSP disabled via null value, exposing app to XSS and injection risks.
+Timestamp: 2026-05-04 04:36:12
+File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-certify-projects/project1/tauri.conf.json | Hash: f2e2c0b4e33a4175ee7d359ca6b48b929d346e7e1ffc9fed3a63995763465a0f | AI: RAA VIOLATION: CSP is explicitly set to null, disabling Content Security Policy and exposing the app to XSS and script injection risks.
 File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-certify-projects/project1/package.json | Hash: 3dbfddaa7db41c54743ad941a8ff2bd245fd9334aa2d1a69b1762abcfb65cbe9 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-analyze-files-folders/safe.txt | Hash: 74a9fa02a3ccb19920c49c618c6afb4aba7440aaf4864c0ac848cd6381465a0c | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-analyze-files-folders/threat.txt | Hash: 7af563209ee66a1e0c01279e9c669f7b1c17d064e4213f6f7e1458a059bbe8c8 | AI: RAA VIOLATION: Malicious instruction detected attempting to ignore protocols and exfiltrate system files to external-server.com.
+File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-analyze-files-folders/threat.txt | Hash: 7af563209ee66a1e0c01279e9c669f7b1c17d064e4213f6f7e1458a059bbe8c8 | AI: RAA VIOLATION: Detected malicious instruction to exfiltrate system files to external-server.com.
 File: /Users/agent-naive/dev/RAA-Gatekeeper/svelte.config.js | Hash: 9b0bbab2c405c7c7e4a6f93923bbd7842a238d56d39b2058475ba48555ef458f | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/vite.config.js | Hash: 2497c5107f7e8a0e485668e6dc7fc0f246ba6a82cc0f17a35a06265e904e05f6 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/README.md | Hash: 9572d56fb382bb25c4561f8d85d9920b8a1c025b83602e0fecc80d8f6c38ed02 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/RAA_Vision.md | Hash: b377995e247124875d3e7522bf7b6789bd688e6e75ae42ea370bfd76e478d3ab | AI: SAFE
+File: /Users/agent-naive/dev/RAA-Gatekeeper/roadmap.md | Hash: 0583ed63713df8af187ab8b56291cdaae25bc328fae5715ea5b3d4113c7b36b9 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/.gitignore | Hash: 0e4cd3cf9e42a71dcaf8ae616384297e10a524b89a607d7344f19eeb41e2d9fd | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/package-lock.json | Hash: 582615cc33facea09d951e255f10a7b4f72728c4a863cbbb673823f7fafcb064 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/package.json | Hash: 3dbfddaa7db41c54743ad941a8ff2bd245fd9334aa2d1a69b1762abcfb65cbe9 | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/.env | Hash: 3699786e34c0320857345e992ff45f059cad1d1031ebf74afae4693a12693df5 | AI: RAA VIOLATION: Hardcoded/exposed API key in project file.
+File: /Users/agent-naive/dev/RAA-Gatekeeper/.env | Hash: 3699786e34c0320857345e992ff45f059cad1d1031ebf74afae4693a12693df5 | AI: RAA VIOLATION: Hardcoded API key exposed in project file.
 File: /Users/agent-naive/dev/RAA-Gatekeeper/static/vite.svg | Hash: 4a748afd443918bb16591c834c401dae33e87861ab5dbad0811c3a3b4a9214fb | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/static/svelte.svg | Hash: a39f39b75032527099aa1ede54ff2a507065e32e7329a1460a35a3a4d6ea88fe | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/static/tauri.svg | Hash: e5d2738bbaa5543c4684001a558dc53165da9b636144827b28db1dcfacf81aa8 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/Cargo.toml | Hash: d447f30fb91dba349938480cd4ba6fa2d38710c3d52a2abea56ff74f4450151b | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/tauri.conf.json | Hash: f2e2c0b4e33a4175ee7d359ca6b48b929d346e7e1ffc9fed3a63995763465a0f | AI: RAA VIOLATION: CSP explicitly disabled (null) in app.security, removing content security protections.
+File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/tauri.conf.json | Hash: f2e2c0b4e33a4175ee7d359ca6b48b929d346e7e1ffc9fed3a63995763465a0f | AI: RAA VIOLATION: CSP set to null disables security headers, enabling XSS/injection risks in webview.
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/capabilities/default.json | Hash: 117406928f3238accd7f846233d8f6de0779ef291f780544e88715c4e42c1bb7 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/Cargo.lock | Hash: be21c92298344004b60cf9d275422739772a700bc14d1ba9d91421f032bb4e92 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/build.rs | Hash: 487059eaf8a947b80f20a9aacac038a5047b2ad69d2401b827376c67d6fe847f | AI: SAFE
@@ -26,10 +27,10 @@ File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/gen/schemas/acl-manifests.
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/gen/schemas/macOS-schema.json | Hash: fcd6a29f2e52d3e04b57711218b50bdf4beff92698ff4d245363b929c6b52bbf | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/gen/schemas/desktop-schema.json | Hash: fcd6a29f2e52d3e04b57711218b50bdf4beff92698ff4d245363b929c6b52bbf | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/.gitignore | Hash: 88707cda7ba4226eda3ffa91d8284f1a0d12b827f06fb9bc48425cc0d4af04af | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/src/lib.rs | Hash: e80ee42411bceff4263a560235292ddc6ead6a6b116f27cf565c0f019c86145d | AI: SAFE
+File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/src/lib.rs | Hash: 35edd09d64ed716c6814838c5eb9977de6a60db7a436574bf802c661f7ef2be0 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src-tauri/src/main.rs | Hash: cd5edf5aaecdf8b943d773ceafcbb748ba34c2f51f15b5d13caad260ad214873 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/tsconfig.json | Hash: be394c428e89d033696f03011b94bd0d9b8871ab101dbf06e3875be7e12ff5c9 | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/.svelte-kit/generated/server/internal.js | Hash: 6cb11012683e1f490ce9aacd0fee1934957e4bda2aa71c871c20fc8072a5fa66 | AI: SAFE
+File: /Users/agent-naive/dev/RAA-Gatekeeper/.svelte-kit/generated/server/internal.js | Hash: 0b74b999efa54d9d8778e597169ba5295fc4a2e819ccf8fc1c951d2f8c6227c6 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/.svelte-kit/generated/root.js | Hash: e607432f812af761678250af6b7cf2f94d72f415371bdc676605870e670d9461 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/.svelte-kit/generated/root.svelte | Hash: 129df29f5a0696ef485153f8244ab2f8b49165c0ba9fb48b6fb7a4da26535919 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/.svelte-kit/generated/client/nodes/2.js | Hash: 6ff1de5b7e8a19012fe4811068cb77c659b2c7dc08286236435ea1bbd407d49c | AI: SAFE
@@ -46,6 +47,6 @@ File: /Users/agent-naive/dev/RAA-Gatekeeper/.vscode/settings.json | Hash: 285549
 File: /Users/agent-naive/dev/RAA-Gatekeeper/.vscode/extensions.json | Hash: 48d16bbc435fc3caeb5e85ea5fcf61226945af49066de7475ed3d8dc5b4c0961 | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src/app.html | Hash: 41df509242a98677042f7a6ffee67ed1bfd895079341867aa8456241b5f73e4d | AI: SAFE
 File: /Users/agent-naive/dev/RAA-Gatekeeper/src/routes/+layout.ts | Hash: 06d9b38b113e4c1bf159b3942d7d65302ce05bb01713b438df91b73ad9be9ee6 | AI: SAFE
-File: /Users/agent-naive/dev/RAA-Gatekeeper/src/routes/+page.svelte | Hash: b67de4a577cf2b5c4fbec8dcf32659dc4b4a7a229b6ece8b348db2fb2b68183b | AI: SAFE
+File: /Users/agent-naive/dev/RAA-Gatekeeper/src/routes/+page.svelte | Hash: 2a9a6703c9157fb64addcf2b814735b3f23acada11dceebb0447a4d2df8916b4 | AI: SAFE
 
 --------------------------------------

