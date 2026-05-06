@@ -26,7 +26,7 @@ struct Message {
 struct RAAReport {
     verdict: String,
     reasoning: String,
-    target_name: String, // FIXED: Missing field added back
+    target_name: String,
     is_error: bool,
 }
 
@@ -54,11 +54,12 @@ fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport
     if let Ok(file) = fs::File::open(manifest_path) {
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader.lines().filter_map(|l| l.ok()).collect();
-        
         for (i, line) in lines.iter().enumerate() {
             if line.contains(&format!("Hash: {}", hash)) {
                 let mut target_name = "Unknown".to_string();
-                let mut reasoning_lines = Vec::new();
+                let mut verdict = String::new();
+                let mut reasoning = Vec::new();
+                let mut capture = false;
 
                 for j in (0..i).rev() {
                     if lines[j].starts_with("Target: ") {
@@ -67,33 +68,26 @@ fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport
                     }
                 }
 
-                let mut capture = false;
                 for next_line in &lines[i..] {
-                    if next_line.starts_with("Result: ") { capture = true; continue; }
-                    if next_line.starts_with("---------------------------") && capture { break; }
-                    if capture { reasoning_lines.push(next_line.clone()); }
+                    if next_line.starts_with("Result: ") {
+                        verdict = next_line.replace("Result: ", "").trim().to_string();
+                        capture = true; continue;
+                    }
+                    if next_line.starts_with("---------------------------") && capture {
+                        return Some(RAAReport {
+                            is_error: verdict.to_uppercase().contains("VIOLATION"),
+                            verdict,
+                            reasoning: reasoning.join("\n").trim().to_string(),
+                            target_name,
+                        });
+                    }
+                    if capture { reasoning.push(next_line.clone()); }
                 }
-
-                let full_reasoning = reasoning_lines.join("\n").trim().to_string();
-                
-                // FIXED: Only trigger Violation if the VERDICT line specifically says so
-                // This prevents "false positives" from text mentioning the word "violation"
-                let is_violation = full_reasoning.to_uppercase().contains("VERDICT: VIOLATION");
-
-                return Some(RAAReport {
-                    verdict: if is_violation { "RAA VIOLATION DETECTED".into() } else { "ALL SAFE".into() },
-                    reasoning: full_reasoning,
-                    target_name,
-                    is_error: is_violation,
-                });
             }
         }
     }
     None
 }
-
-
-
 
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str) -> PathBuf {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -108,10 +102,8 @@ fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str
     };
 
     let manifest_path = audit_root.join(manifest_name);
-    
-    // THE FIX: Simplified template so the Parser doesn't get confused
     let log_entry = format!(
-        "\n--- RAA FORENSIC REPORT ---\nType: {}\nTarget: {}\nHash: {}\nTimestamp: {}\nResult: \n{}\n---------------------------\n",
+        "\n--- RAA FORENSIC REPORT ---\nType: {}\nTarget: {}\nHash: {}\nTimestamp: {}\nResult: {}\n---------------------------\n",
         scan_type, target_label, hash, Local::now().format("%Y-%m-%d %H:%M:%S"), result_text
     );
 
@@ -125,27 +117,20 @@ fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str
 async fn call_llm_auditor(input: &str, context_type: &str, base_url: &str, model_name: &str, target: &str) -> Result<RAAReport, String> {
     let api_key = env::var("GROK_API_KEY").unwrap_or_default();
     let client = reqwest::Client::new();
-    
-    // HARDENED PROMPT: Forces technical depth
-    let system_prompt = format!(
-        "You are an RAA Security Auditor. Analyze this {} for threats. \
-        You MUST provide a lengthy, highly technical 3-paragraph explanation. \
-        Start your response with 'Audit Analysis for {}:' followed by the details. \
-        If safe, conclude with 'VERDICT: SAFE'. If dangerous, include 'VERDICT: VIOLATION'.", 
-        context_type, target
-    );
-
     let response = client.post(base_url).header("Authorization", format!("Bearer {}", api_key))
         .json(&LlmRequest {
             model: model_name.to_string(),
             messages: vec![
-                Message { role: "system".to_string(), content: system_prompt },
+                Message { 
+                    role: "system".to_string(), 
+                    content: format!("You are an RAA Security Auditor. Analyze this collection of {} for threats. Return a technical report. If ANY item is dangerous, you must include the word VIOLATION clearly.", context_type) 
+                },
                 Message { role: "user".to_string(), content: input.to_string() },
             ],
         }).send().await.map_err(|e| e.to_string())?;
     
     let raw: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let ai_response = raw["choices"][0]["message"]["content"].as_str().unwrap_or("SAFE").to_string();
+    let ai_response = raw["choices"]["message"]["content"].as_str().unwrap_or("SAFE").to_string();
     let is_violation = ai_response.to_uppercase().contains("VIOLATION");
     
     Ok(RAAReport { 
@@ -155,7 +140,6 @@ async fn call_llm_auditor(input: &str, context_type: &str, base_url: &str, model
         is_error: is_violation 
     })
 }
-
 
 #[tauri::command]
 async fn check_integrity() -> Result<serde_json::Value, String> {
@@ -175,9 +159,7 @@ async fn audit_command(command_str: String, base_url: String, model_name: String
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
     let bible_path = PathBuf::from(home).join(".RAA_Audits").join(".raa-audit-terminal-commands");
 
-    if let Some(cached) = read_entry_from_disk(&bible_path, &hash) { 
-        return Ok(cached); 
-    }
+    if let Some(cached) = read_entry_from_disk(&bible_path, &hash) { return Ok(cached); }
 
     let report = call_llm_auditor(&command_str, "terminal command", &base_url, &model_name, &command_str).await?;
     let path = log_to_raa("audit", &command_str, &hash, &report.reasoning);
@@ -193,6 +175,8 @@ async fn scan_file_integrity(file_paths: Vec<String>, base_url: String, model_na
         Some(FileJob { path, size: content.len(), hash, content })
     }).collect();
 
+    if jobs.is_empty() { return Err("No valid files found.".into()); }
+
     let target_label = if jobs.len() == 1 {
         jobs[0].path.file_name().unwrap_or_default().to_string_lossy().into_owned()
     } else {
@@ -206,17 +190,17 @@ async fn scan_file_integrity(file_paths: Vec<String>, base_url: String, model_na
         hash_src.push_str(&job.hash);
     }
     
-    let batch_hash = get_content_hash(&hash_src);
-    let report = call_llm_auditor(&combined, "batch files", &base_url, &model_name, &target_label).await?;
-    let path = log_to_raa("analyze", &target_label, &batch_hash, &report.reasoning);
-    Ok(read_entry_from_disk(&path, &batch_hash).unwrap_or(report))
+    let final_hash = get_content_hash(&hash_src);
+    let report = call_llm_auditor(&combined, "collection of files", &base_url, &model_name, &target_label).await?;
+    let path = log_to_raa("analyze", &target_label, &final_hash, &report.reasoning);
+    Ok(read_entry_from_disk(&path, &final_hash).unwrap_or(report))
 }
 
 #[tauri::command]
 async fn scan_compressed_archive(window: tauri::Window, zip_path: String, allowed_extensions: Vec<String>, base_url: String, model_name: String) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
-    let mut internal_entries = Vec::new();
+    let mut internal_results = Vec::new();
     let mut violation_found = false;
 
     for i in 0..archive.len() {
@@ -231,15 +215,15 @@ async fn scan_compressed_archive(window: tauri::Window, zip_path: String, allowe
                 let hash = get_content_hash(&content);
                 let report = call_llm_auditor(&content, "archive internal", &base_url, &model_name, &name).await?;
                 if report.is_error { violation_found = true; }
-                internal_entries.push(format!("File: {} | Hash: {} | Result: {}", name, hash, report.verdict));
+                internal_results.push(format!("File: {} | Hash: {} | AI: {}", name, hash, report.verdict));
             }
         }
     }
-    let final_text = internal_entries.join("\n");
-    log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text);
+    let reasoning = internal_results.join("\n");
+    log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &reasoning);
     Ok(RAAReport { 
-        verdict: if violation_found { "VIOLATION FOUND".into() } else { "SAFE".into() }, 
-        reasoning: final_text, 
+        verdict: if violation_found { "VIOLATION FOUND" } else { "SAFE" }.into(), 
+        reasoning, 
         target_name: zip_path, 
         is_error: violation_found 
     })
@@ -264,7 +248,7 @@ async fn generate_manifest(window: tauri::Window, folder_path: String, allowed_e
     }
 
     let jobs: Vec<FileJob> = target_files.into_par_iter().filter_map(|(path, ext)| {
-        if ext == ".zip" { return Some(FileJob { path, size: 0, hash: "ZIP".into(), content: "".into() }); }
+        if ext == ".zip" { return Some(FileJob { path, size: 0, hash: "ZIP_CONTAINER".into(), content: "".into() }); }
         let content = fs::read_to_string(&path).ok().unwrap_or_default();
         let hash = get_content_hash(&content);
         Some(FileJob { path, size: content.len(), hash, content })
@@ -274,7 +258,7 @@ async fn generate_manifest(window: tauri::Window, folder_path: String, allowed_e
     let mut current_bucket = Vec::new();
     let mut current_size = 0;
     for job in jobs {
-        if job.hash == "ZIP" { buckets.push(vec![job]); continue; }
+        if job.hash == "ZIP_CONTAINER" { buckets.push(vec![job]); continue; }
         if current_size + job.size > 10000 && !current_bucket.is_empty() {
             buckets.push(current_bucket);
             current_bucket = Vec::new(); current_size = 0;
@@ -288,7 +272,7 @@ async fn generate_manifest(window: tauri::Window, folder_path: String, allowed_e
     for bucket in buckets {
         let mut batch_text = String::new();
         for job in &bucket { batch_text.push_str(&format!("FILE: {} | HASH: {}\n{}\n", job.path.display(), job.hash, job.content)); }
-        let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest").await.unwrap_or(RAAReport { verdict: "SAFE".into(), reasoning: "".into(), target_name: "".into(), is_error: false });
+        let report = call_llm_auditor(&batch_text, "folder certification", &base_url, &model_name, "Manifest").await.unwrap_or(RAAReport { verdict: "SAFE".into(), reasoning: "".into(), target_name: "".into(), is_error: false });
         for job in bucket { ledger_entries.push_str(&format!("File: {} | Hash: {} | AI: {}\n", job.path.display(), job.hash, report.verdict)); }
     }
 

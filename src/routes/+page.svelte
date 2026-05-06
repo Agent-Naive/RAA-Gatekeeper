@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
+  // --- PERSISTENCE & STATE ---
   let baseUrl = $state(localStorage.getItem("raa_base_url") || ""); 
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
   let isConfigured = $derived(baseUrl.trim().length > 0 && modelName.trim().length > 0);
@@ -16,14 +17,14 @@
 
   let activeTab = $state("welcome"); 
   let isProcessing = $state(false); 
-  let currentReport = $state({ verdict: "", reasoning: "", is_error: false });
+  let currentReport = $state({ verdict: "", reasoning: "", target_name: "", is_error: false });
   let certMsg = $state("");
   let commandInput = $state("");
   let ledgerContent = $state("");
   let integrityReport = $state<any>(null);
 
+  // --- MONITOR STATE ---
   let allowedExts = $state([".rs", ".ts", ".js", ".py", ".yml", ".zip"]); 
-  const availableExts = [".rs", ".ts", ".js", ".py", ".yml", ".json", ".md", ".toml", ".sh", ".zip"];
   let activeFiles = $state<string[]>([]);
   let skippedFiles = $state<string[]>([]);
   let activeScrollContainer: HTMLElement | undefined = $state();
@@ -34,10 +35,7 @@
   }
 
   onMount(() => {
-    // 1. Sync check for dev mode
     isDev = window.location.hostname === 'localhost';
-    
-    // 2. Wrap the async listener setup
     let unlisten: any;
     async function setupListener() {
       unlisten = await listen("scan-event", (event: any) => {
@@ -51,33 +49,57 @@
         }
       });
     }
-
     setupListener();
-
-    // 3. Return the cleanup function correctly
-    return () => { 
-      if (unlisten) unlisten(); 
-    };
+    return () => { if (unlisten) unlisten(); };
   });
 
-
-  async function runIntegrityCheck() {
-    activeTab = 'integrity';
-    integrityReport = await invoke("check_integrity");
-  }
-
+  // --- UI PARSING LOGIC ---
   function resetResults() {
-    currentReport = { verdict: "", reasoning: "", is_error: false };
+    currentReport = { verdict: "", reasoning: "", target_name: "", is_error: false };
     certMsg = ""; activeFiles = []; skippedFiles = [];
   }
 
+  function getReportSegments(text: string) {
+    if (!text) return [];
+    let segments = text.split(/(?:\n|^)(?=\d+\.|\*\*Item|Item\s\d+:|---\n)/g)
+                       .filter(s => s.trim().length > 5);
+    
+    if (segments.length === 0 && text.trim().length > 0) {
+      segments = [text];
+    }
+    console.log("Segments from reasoning:", segments);
+    return segments;
+  }
+
+
+  function highlightSegment(text: string) {
+    if (!text) return "";
+    return text
+      .replace(/([\/\w\-_.]+\.(?:md|rs|ts|js|py|yml|zip|toml|json|txt|sh))/gi, '<span class="path-text">$1</span>')
+      .replace(/(SAFE|CERTIFIED|CLEAN|ALL SAFE)/g, '<span class="text-success">$1</span>')
+      .replace(/(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)/g, '<span class="text-danger">$1</span>');
+  }
+
+  // --- HANDLERS ---
   async function handleAudit(e?: Event) {
     if (e) e.preventDefault();
-    resetResults(); isProcessing = true;
-    try { currentReport = await invoke("audit_command", { commandStr: commandInput, baseUrl, modelName }); } 
-    catch (err) { currentReport = { verdict: "Error", reasoning: String(err), is_error: true }; }
+    if (!commandInput.trim()) return;
+    resetResults(); 
+    isProcessing = true;
+    try { 
+      // ADDED: <any> to tell TypeScript the incoming data is valid
+      const report = await invoke<any>("audit_command", { commandStr: commandInput, baseUrl, modelName });
+      currentReport = report;
+      await tick(); 
+      console.log("Updated currentReport:", currentReport);
+    } 
+    catch (err) { 
+      currentReport = { verdict: "Error", reasoning: String(err), target_name: "Audit", is_error: true };
+      await tick();
+    }
     finally { isProcessing = false; }
   }
+
 
   async function handleBrowseFile() {
     resetResults();
@@ -88,7 +110,7 @@
         const paths = Array.isArray(selected) ? selected : [selected];
         currentReport = await invoke("scan_file_integrity", { filePaths: paths, baseUrl, modelName });
       }
-    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), is_error: true }; }
+    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), target_name: "Files", is_error: true }; }
     finally { isProcessing = false; }
   }
 
@@ -100,7 +122,7 @@
         isProcessing = true;
         currentReport = await invoke("scan_compressed_archive", { zipPath: selected, allowedExtensions: allowedExts, baseUrl, modelName });
       }
-    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), is_error: true }; }
+    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), target_name: "Archive", is_error: true }; }
     finally { isProcessing = false; }
   }
 
@@ -116,10 +138,8 @@
     finally { isProcessing = false; }
   }
 
-  async function loadLedger() {
-    activeTab = 'ledger';
-    ledgerContent = await invoke("read_ledger");
-  }
+  async function loadLedger() { activeTab = 'ledger'; ledgerContent = await invoke("read_ledger"); }
+  async function runIntegrityCheck() { activeTab = 'integrity'; integrityReport = await invoke("check_integrity"); }
 </script>
 
 <div class="app-layout" class:scanning={isProcessing}>
@@ -154,7 +174,7 @@
         <section class="tool-view">
           <h2>Command Audit</h2>
           <form class="tool-box" onsubmit={handleAudit}>
-            <input type="text" bind:value={commandInput} placeholder="e.g. ls -la" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" />
+            <input type="text" bind:value={commandInput} placeholder="e.g. ls -la" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="terminal-input" />
             <button class="primary-btn" type="submit" disabled={isProcessing}>Audit</button>
           </form>
         </section>
@@ -170,7 +190,7 @@
           <h2>Deep Archive Audit</h2>
           <button class="primary-btn" onclick={handleBrowseArchive} disabled={isProcessing}>Select ZIP Archive</button>
           <div class="dual-pane-monitor">
-            <div class="pane"><h4>📡 Internal Files Audited</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f}</div>{/each}</div></div>
+            <div class="pane"><h4>📡 Audited</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f}</div>{/each}</div></div>
             <div class="pane"><h4>🚫 Skipped</h4><div class="scroll-list" bind:this={skippedScrollContainer}>{#each skippedFiles as f}<div class="file-entry muted">{f}</div>{/each}</div></div>
           </div>
         </section>
@@ -180,7 +200,7 @@
           <h2>Certify Project</h2>
           <button class="primary-btn" onclick={handleCertifyFolder} disabled={isProcessing}>Start Certification</button>
           <div class="dual-pane-monitor">
-            <div class="pane"><h4>📡 Live Audit</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f.split('/').pop()}</div>{/each}</div></div>
+            <div class="pane"><h4>📡 Live</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f.split('/').pop()}</div>{/each}</div></div>
             <div class="pane"><h4>🚫 Skipped</h4><div class="scroll-list" bind:this={skippedScrollContainer}>{#each skippedFiles as f}<div class="file-entry muted">{f.split('/').pop()}</div>{/each}</div></div>
           </div>
         </section>
@@ -198,16 +218,17 @@
             {#if integrityReport}
               <div class="integrity-grid">
                 <div class="check-item"><span>🏎️ Parallel Hashing:</span> <span class="check">{integrityReport.parallel_hashing ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📡 technical Reasoning:</span> <span class="check">{integrityReport.ai_reasoning ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>🔐 Terminal Input Lock:</span> <span class="check">{integrityReport.terminal_input ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📦 ZIP Safety Valve:</span> <span class="check">{integrityReport.zip_safety ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📁 Hidden Vault Path:</span> <span class="check">{integrityReport.vault_path ? '✅' : '❌'}</span></div>
+                <div class="check-item"><span>📡 Reasoning:</span> <span class="check">{integrityReport.ai_reasoning ? '✅' : '❌'}</span></div>
+                <div class="check-item"><span>🔐 Input Lock:</span> <span class="check">{integrityReport.terminal_input_lock ? '✅' : '❌'}</span></div>
+                <div class="check-item"><span>📦 ZIP Safety:</span> <span class="check">{integrityReport.zip_safety ? '✅' : '❌'}</span></div>
+                <div class="check-item"><span>📁 Hidden Vault:</span> <span class="check">{integrityReport.vault_path ? '✅' : '❌'}</span></div>
+                <div class="check-item"><span>💾 Disk-First:</span> <span class="check">{integrityReport.disk_first_verification ? '✅' : '❌'}</span></div>
               </div>
             {/if}
           </div>
         </section>
 
-      {:else if activeTab === 'settings'}
+        {:else if activeTab === 'settings'}
         <section class="tool-view">
           <h2>Global Settings</h2>
           <div class="settings-box">
@@ -217,37 +238,42 @@
         </section>
       {/if}
 
-      {#if currentReport.verdict || certMsg}
+      <!-- THE GLASS VAULT OVERLAY -->
+      {#if currentReport.verdict}
+        <div class="glass-vault">
+          <div class="vault-header" class:error={currentReport.is_error}>
+            <span class="v-badge">{currentReport.is_error ? '🚨 RAA VIOLATION' : '🛡️ CERTIFIED'}</span>
+            <span class="v-target">TARGET: {currentReport.target_name}</span>
+          </div>
+          
+          <div class="vault-body">
+            <pre class="raw-forensics">{@html highlightSegment(currentReport.reasoning)}</pre>
+          </div>
+
+          <button class="vault-close" onclick={resetResults}>X CLOSE VAULT</button>
+        </div>
+      {/if}
+
+      {#if certMsg}
         <div class="forensic-status-overlay">
-          {#if currentReport.verdict}
-            <div class="report-card" class:error={currentReport.is_error}>
-              <div class="badge">{currentReport.is_error ? '❌ VIOLATION' : '✅ CERTIFIED'}</div>
-              <div class="verdict-text">{currentReport.verdict}</div>
-              <div class="reasoning-text"><strong>FORENSIC CONTEXT:</strong><br/>{currentReport.reasoning}</div>
-              <button class="clear-btn" onclick={resetResults}>Dismiss</button>
-            </div>
-          {/if}
-          {#if certMsg}
-            <div class="mission-success-toast"><span>{certMsg}</span><button class="toast-close" onclick={() => certMsg = ""}>×</button></div>
-          {/if}
+          <div class="mission-success-toast">
+            <span>{certMsg}</span>
+            <button class="toast-close" onclick={() => certMsg = ""}>×</button>
+          </div>
         </div>
       {/if}
     </div>
   </main>
 
-  <!-- INSERT FOOTER HERE -->
+
   <footer class="app-footer">
     <div class="footer-stats">
-      {#if activeFiles.length > 0}
-        <span class="stat-item">Active Files: <strong>{activeFiles.length}</strong></span>
-        <span class="stat-divider">|</span>
-      {/if}
-      <span class="stat-item">Active LLM: <span class="brand-text">{modelName || 'None'}</span></span>
+      <span class="stat-item">LLM: <span class="brand-text">{modelName || 'None'}</span></span>
       <span class="stat-divider">|</span>
       <span class="stat-item">Status: <span class={isConfigured ? 'text-success' : 'text-danger'}>{isConfigured ? 'Armed' : 'Standby'}</span></span>
     </div>
   </footer>
-</div> <!-- This is the very last closing div of .app-layout -->
+</div>
 
 <style>
   :root { font-family: 'Inter', sans-serif; --primary: #396cd8; --bg: #0a0a0a; --nav: #161616; --border: #262626; }
@@ -267,29 +293,96 @@
   .tool-box { display: flex; gap: 10px; margin-top: 20px; }
   .tool-box input { flex: 1; background: #1a1a1a; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 6px; font-family: monospace; }
   .primary-btn { background: var(--primary); color: #fff; border: none; padding: 12px 24px; font-weight: 700; border-radius: 6px; cursor: pointer; }
-  .dual-pane-monitor { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; height: 350px; }
+  .dual-pane-monitor { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; height: 300px; }
   .pane { background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; overflow: hidden; text-align: left; }
   h4 { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 10px; }
   .scroll-list { overflow-y: auto; flex: 1; font-family: monospace; font-size: 11px; }
   .file-entry { padding: 4px 0; border-bottom: 1px solid #222; }
+
+  /* --- ACTIVE: THE GLASS VAULT OVERLAY --- */
+  .glass-vault {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 850px;
+    max-height: 80vh;
+    background: #050505;
+    border: 2px solid #333;
+    box-shadow: 0 0 100px #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    border-radius: 8px;
+  }
+  .vault-header {
+    padding: 20px;
+    background: #000;
+    border-bottom: 1px solid #222;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: monospace;
+  }
+  .vault-header.error { border-bottom: 2px solid #ef4444; }
+  .v-badge { color: #396cd8; font-weight: bold; }
+  .v-target { opacity: 0.6; font-size: 12px; }
+  .vault-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 30px;
+    background: #080808;
+    text-align: left;
+  }
+  .raw-forensics {
+    color: #ffffff !important; /* FORCED BRIGHT WHITE */
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.7;
+    margin: 0;
+    font-family: 'Courier New', monospace;
+  }
+  .vault-close {
+    background: #111;
+    color: #444;
+    border: none;
+    padding: 15px;
+    cursor: pointer;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .vault-close:hover { color: #fff; background: #222; }
+
+  /* --- VAULTED: LEGACY STYLES (Preserved via :global) --- */
   .forensic-status-overlay { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); width: 100%; max-width: 800px; z-index: 1000; pointer-events: none; }
-  .report-card, .mission-success-toast { pointer-events: auto; background: #1a1a1a; border: 1px solid var(--border); border-radius: 12px; text-align: left; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-  .report-card.error { border-left: 4px solid #ef4444; }
-  .badge { background: #333; color: #fff; padding: 8px 16px; font-size: 10px; font-weight: 800; }
-  .verdict-text { padding: 15px 20px; font-weight: 800; font-family: monospace; border-bottom: 1px solid var(--border); }
-  .reasoning-text { padding: 15px 20px; color: #888; font-size: 13px; white-space: pre-wrap; }
+  :global(.report-card), .mission-success-toast { pointer-events: auto; background: #1a1a1a; border: 1px solid var(--border); border-radius: 12px; text-align: left; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+  :global(.report-card.error) { border-left: 4px solid #ef4444; }
+  :global(.badge) { background: #333; color: #fff; padding: 8px 16px; font-size: 10px; font-weight: 800; display: flex; align-items: center; }
+  :global(.target-label) { margin-left: 10px; opacity: 0.7; font-weight: 400; text-transform: none; }
+  :global(.reasoning-container) { max-height: 450px; overflow-y: auto; padding: 10px; }
+  :global(.segment-card) { background: #111; margin-bottom: 10px; padding: 15px; border-radius: 6px; border-left: 3px solid #10b981; }
+  :global(.segment-card.segment-error) { border-left-color: #ef4444; }
+  :global(.segment-content) { white-space: pre-wrap; font-size: 12px; color: #ccc; margin: 0; line-height: 1.5; font-family: monospace; }
+  :global(.clear-btn) { background: transparent; border: 1px solid #333; color: #666; padding: 8px 16px; margin: 0 20px 20px; border-radius: 4px; cursor: pointer; }
+
+  /* --- UTILITIES --- */
   .mission-success-toast { background: #000; border: 1px solid var(--primary); color: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
   .ledger-viewer { background: #111; padding: 20px; border: 1px solid #333; border-radius: 8px; font-family: monospace; height: 500px; overflow-y: auto; text-align: left; white-space: pre-wrap; }
   .integrity-grid { display: grid; gap: 15px; }
   .check-item { display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 10px; }
-  .clear-btn { background: transparent; border: 1px solid #333; color: #666; padding: 8px 16px; margin: 0 20px 20px; border-radius: 4px; cursor: pointer; }
-  .subtitle { font-size: 14px; opacity: 0.6; }
-  .version-tag { font-size: 10px; opacity: 0.4; }
-  .app-footer {padding: 12px 30px; background: #000; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; font-size: 10px; color: #444; flex-shrink: 0; }
+  .app-footer { padding: 12px 30px; background: #000; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; font-size: 10px; color: #444; flex-shrink: 0; }
   .footer-stats { display: flex; align-items: center; gap: 15px; }
   .stat-divider { opacity: 0.2; }
   .brand-text { color: var(--primary); font-weight: bold; }
-  .text-success { color: #10b981; }
-  .text-danger { color: #ef4444; }
+  .terminal-input { text-transform: none !important; font-family: monospace; }
+  .version-tag { font-size: 10px; opacity: 0.4; }
+  .muted { opacity: 0.4; }
+  .subtitle { font-size: 14px; opacity: 0.6; }
 
+  /* --- INJECTED COLORS --- */
+  :global(.path-text) { color: #396cd8; font-weight: bold; }
+  :global(.text-success) { color: #10b981 !important; font-weight: bold; }
+  :global(.text-danger) { color: #ef4444 !important; font-weight: bold; }
 </style>
