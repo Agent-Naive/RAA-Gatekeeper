@@ -26,3 +26,4 @@ tokio = { version = "1", features = ["full"] }
 walkdir = "2"
 chrono = "0.4"
 zip = "8.6.0"
+rayon = "1.10"

@@ -1,7 +1,0 @@
-
---- RAA FULL PROJECT CERTIFICATION ---
-Timestamp: 2026-05-04 04:34:33
-File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-certify-projects/project1/tauri.conf.json | Hash: f2e2c0b4e33a4175ee7d359ca6b48b929d346e7e1ffc9fed3a63995763465a0f | AI: RAA VIOLATION: CSP disabled via "csp": null in app.security, removing all content restrictions and exposing app to XSS/injection risks.
-File: /Users/agent-naive/dev/RAA-Gatekeeper/raa-test-certify-projects/project1/package.json | Hash: 3dbfddaa7db41c54743ad941a8ff2bd245fd9334aa2d1a69b1762abcfb65cbe9 | AI: SAFE
-
---------------------------------------

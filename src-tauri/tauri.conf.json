@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "RAA-Gatekeeper",
-        "width": 800,
-        "height": 600
+        "width": 1100,
+        "height": 750
       }
     ],
     "security": {
