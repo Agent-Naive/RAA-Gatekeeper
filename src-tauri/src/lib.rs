@@ -1,14 +1,21 @@
-use std::fs::{self, OpenOptions};
-use std::io::{Write, Read, BufReader, BufRead};
-use std::env;
-use sha2::{Sha256, Digest};
-use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
-use chrono::Local;
-use zip::ZipArchive;
-use std::path::PathBuf;
 use tauri::Emitter;
+use serde::{Deserialize, Serialize};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write, Read}; 
+use std::path::PathBuf;
+use std::env;
+use chrono::Local;
+use sha2::{Sha256, Digest};
+use walkdir::WalkDir;
+use zip::read::ZipArchive;
 use rayon::prelude::*;
+
+// --- PHASE 4 WATCHER ---
+
+use notify::Watcher;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
 
 #[derive(Serialize)]
 struct LlmRequest {
@@ -92,9 +99,6 @@ fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport
     None
 }
 
-
-
-
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str) -> PathBuf {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
     let audit_root = PathBuf::from(home).join(".RAA_Audits");
@@ -156,15 +160,18 @@ async fn call_llm_auditor(input: &str, context_type: &str, base_url: &str, model
     })
 }
 
+#[allow(dead_code)]
+static WATCHER: Lazy<Mutex<Option<notify::RecommendedWatcher>>> = Lazy::new(|| Mutex::new(None));
+
 
 #[tauri::command]
 async fn check_integrity() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "parallel_hashing": true,
         "ai_reasoning": true,
+        "terminal_input_lock": true,
         "vault_path": true,
         "zip_safety": true,
-        "terminal_bible": true,
         "disk_first_verification": true
     }))
 }
@@ -222,6 +229,12 @@ async fn scan_compressed_archive(window: tauri::Window, zip_path: String, allowe
     for i in 0..archive.len() {
         if let Ok(mut zf) = archive.by_index(i) {
             let name = zf.name().to_string();
+
+            // --- MAC OS JUNK FILTER ---
+            if name.contains("__MACOSX") || name.split('/').last().unwrap_or("").starts_with("._") {
+                continue;
+            }
+
             let ext = format!(".{}", name.split('.').last().unwrap_or("").to_lowercase());
             if zf.is_file() && allowed_extensions.contains(&ext) {
                 let _ = window.emit("scan-event", ScanEvent { path: name.clone(), status: "Active".into() });
@@ -249,9 +262,13 @@ async fn scan_compressed_archive(window: tauri::Window, zip_path: String, allowe
 async fn generate_manifest(window: tauri::Window, folder_path: String, allowed_extensions: Vec<String>, base_url: String, model_name: String) -> Result<String, String> {
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
     let mut target_files = Vec::new();
+    
+    // UPDATED FILTER LOGIC
     let walker = WalkDir::new(&folder_path_buf).into_iter().filter_entry(|e| {
         let name = e.file_name().to_string_lossy();
-        !["node_modules", ".git", "target", "dist"].iter().any(|&ex| name == ex)
+        // Skip standard dev noise PLUS the macOS metadata junk
+        !["node_modules", ".git", "target", "dist", "__MACOSX"].iter().any(|&ex| name == ex) 
+        && !name.starts_with("._")
     });
 
     for entry in walker.filter_map(|e| e.ok()) {
@@ -315,13 +332,67 @@ async fn read_ledger() -> Result<String, String> {
     Ok(all_logs)
 }
 
+#[tauri::command]
+async fn toggle_watcher(
+    window: tauri::Window, 
+    enabled: bool, 
+    folders: Vec<String>, 
+    depth: usize
+) -> Result<(), String> {
+    let mut watcher_lock = WATCHER.lock().map_err(|e| e.to_string())?;
+
+    // Kill old watcher
+    *watcher_lock = None;
+
+    if !enabled || folders.is_empty() { 
+        println!("🕵️ Watcher: Deactivated");
+        return Ok(()); 
+    }
+
+    println!("🕵️ Watcher: ARMED for {} target slots (Depth: {})", folders.len(), depth);
+
+    let window_clone = window.clone();
+    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
+        match res {
+            Ok(event) => {
+                println!("📡 RADAR: Event Detected: {:?}", event.kind);
+                for path in event.paths {
+                    let path_str = path.to_string_lossy().to_string();
+                    if !path_str.contains("~") && !path_str.contains(".DS_Store") {
+                        println!("⚡ SPARK: Broadcasting DNA change: {}", path_str);
+                        let _ = window_clone.emit("watcher-event", path_str);
+                    }
+                }
+            },
+            Err(e) => println!("🚨 ERROR: Watcher kernel error: {:?}", e),
+        }
+    }).map_err(|e| e.to_string())?;
+
+    for folder in folders {
+        let mode = if depth > 1 { notify::RecursiveMode::Recursive } else { notify::RecursiveMode::NonRecursive };
+        let _ = watcher.watch(std::path::Path::new(&folder), mode);
+    }
+
+    *watcher_lock = Some(watcher);
+    Ok(())
+}
+
 pub fn run() {
     dotenvy::dotenv().ok(); 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![audit_command, generate_manifest, scan_file_integrity, scan_compressed_archive, read_ledger, check_integrity])
+        .invoke_handler(tauri::generate_handler![
+            audit_command, 
+            generate_manifest, 
+            scan_file_integrity, 
+            scan_compressed_archive, 
+            read_ledger, 
+            check_integrity,
+            toggle_watcher
+        ])
         .run(tauri::generate_context!())
         .expect("error");
 }
+

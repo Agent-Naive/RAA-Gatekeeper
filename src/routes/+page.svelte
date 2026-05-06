@@ -4,7 +4,49 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
-  // --- PERSISTENCE & STATE ---
+    // --- WATCHER SETTINGS ---
+    let watcherEnabled = $state(localStorage.getItem("raa_watcher_enabled") === "true");
+  let watcherFolders = $state<string[]>(JSON.parse(localStorage.getItem("raa_watcher_folders") || "[]"));
+  let watcherDepth = $state(parseInt(localStorage.getItem("raa_watcher_depth") || "3"));
+
+  // THE WATCHTOWER TRIGGER (Keeps Watcher State & Rust in sync)
+  $effect(() => {
+    localStorage.setItem("raa_watcher_enabled", watcherEnabled.toString());
+    localStorage.setItem("raa_watcher_folders", JSON.stringify(watcherFolders));
+    localStorage.setItem("raa_watcher_depth", watcherDepth.toString());
+
+    // Tell Rust to update the background thread
+    invoke("toggle_watcher", { 
+      enabled: watcherEnabled, 
+      folders: watcherFolders, 
+      depth: watcherDepth 
+    })
+    .then(() => console.log("🕵️ UI: Watcher Handshake SUCCESS"))
+    .catch(e => console.error("🚨 UI: Watcher Handshake FAILED", e));
+  });
+
+    // --- PHASE 4: THE SILENT LISTENER (The Ear) ---
+    let lastWatchedFile = $state("");
+  let showWatcherAlert = $state(false);
+
+  $effect(() => {
+    let unlisten: any;
+    async function startListening() {
+      // This catches the "SPARK" we saw in your terminal
+      unlisten = await listen("watcher-event", (event: any) => {
+        console.log("👂 UI HEARD SPARK:", event.payload);
+        lastWatchedFile = event.payload;
+        showWatcherAlert = true;
+        
+        // Auto-hide alert after 8 seconds
+        setTimeout(() => { showWatcherAlert = false; }, 8000);
+      });
+    }
+    startListening();
+    return () => { if (unlisten) unlisten(); };
+  });
+
+  // --- CORE CONFIG & PERSISTENCE ---
   let baseUrl = $state(localStorage.getItem("raa_base_url") || ""); 
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
   let isConfigured = $derived(baseUrl.trim().length > 0 && modelName.trim().length > 0);
@@ -24,7 +66,7 @@
   let integrityReport = $state<any>(null);
 
   // --- MONITOR STATE ---
-  let allowedExts = $state([".rs", ".ts", ".js", ".py", ".yml", ".zip"]); 
+  let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]); 
   let activeFiles = $state<string[]>([]);
   let skippedFiles = $state<string[]>([]);
   let activeScrollContainer: HTMLElement | undefined = $state();
@@ -81,6 +123,19 @@
   }
 
   // --- HANDLERS ---
+
+  async function addWatcherFolder() {
+    if (watcherFolders.length >= 5) return;
+    const selected = await open({ directory: true, multiple: false });
+    if (selected && !Array.isArray(selected)) {
+      watcherFolders = [...watcherFolders, selected];
+    }
+  }
+
+  function removeWatcherFolder(index: number) {
+    watcherFolders = watcherFolders.filter((_, i) => i !== index);
+  }
+
   async function handleAudit(e?: Event) {
     if (e) e.preventDefault();
     if (!commandInput.trim()) return;
@@ -232,8 +287,76 @@
         <section class="tool-view">
           <h2>Global Settings</h2>
           <div class="settings-box">
-             <label>Base URL <input type="text" bind:value={baseUrl} /></label>
-             <label>Model Name <input type="text" bind:value={modelName} /></label>
+            
+            <!-- 1. AI CORE CONFIGURATION -->
+            <div class="settings-group-header">
+              <h4 class="filter-title">AI Core Configuration</h4>
+            </div>
+            <label>Base URL <input type="text" bind:value={baseUrl} /></label>
+            <label>Model Name <input type="text" bind:value={modelName} /></label>
+            
+            <!-- 2. AUDIT FILTER LOGIC (CHIPS) -->
+            <div class="filter-logic-zone">
+              <h4 class="filter-title">Audit Filter Logic</h4>
+              <p class="filter-hint">Targeted extensions for Finder & LLM scan:</p>
+              
+              <div class="extension-grid">
+                {#each [".env", ".ipynb", ".js", ".json", ".jsonl", ".md", ".py", ".rs", ".sh", ".toml", ".ts", ".txt", ".yml", ".zip"] as ext}
+                  <button 
+                    type="button"
+                    class="ext-chip"
+                    class:active={allowedExts.includes(ext)}
+                    onclick={() => {
+                      if (allowedExts.includes(ext)) {
+                        allowedExts = allowedExts.filter(e => e !== ext);
+                      } else {
+                        allowedExts = [...allowedExts, ext];
+                      }
+                    }}
+                  >
+                    {ext}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <!-- 3. SILENT WATCHER SLOTS (PHASE 4) -->
+            <div class="filter-logic-zone" style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;">
+              <h4 class="filter-title">🕵️ Silent Watcher (Phase 4)</h4>
+              
+              <div class="watcher-controls" style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;">
+                <label class="toggle-label" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                  <input type="checkbox" bind:checked={watcherEnabled} />
+                  Watcher Status: <span class={watcherEnabled ? 'text-success' : 'text-danger'}>{watcherEnabled ? 'ARMED' : 'OFF'}</span>
+                </label>
+                
+                <label style="font-size: 11px; color: #666;">
+                  Depth Limit: 
+                  <input type="number" min="1" max="5" bind:value={watcherDepth} 
+                    style="width: 50px; background: #111; border: 1px solid #333; color: white; margin-left: 5px; padding: 2px 5px;" />
+                </label>
+              </div>
+
+              <div class="folder-slots">
+                <p class="filter-hint">Monitored Folder Slots ({watcherFolders.length}/5):</p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  {#each watcherFolders as folder, i}
+                    <div class="folder-slot" style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                      <span class="path-text" style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{folder}</span>
+                      <button class="remove-btn" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;" onclick={() => removeWatcherFolder(i)}>×</button>
+                    </div>
+                  {/each}
+                  
+                  {#if watcherFolders.length < 5}
+                    <button class="add-slot-btn" 
+                      style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;" 
+                      onclick={addWatcherFolder}>
+                      + Click to Add Target Folder Slot
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       {/if}
@@ -263,6 +386,23 @@
         </div>
       {/if}
     </div>
+
+      <!-- PHASE 4: WATCHER TOAST UI -->
+  {#if showWatcherAlert}
+  <div class="watcher-toast">
+    <span class="toast-icon">🕵️</span>
+    <div class="toast-body">
+      <div class="toast-title">DNA Change Detected</div>
+      <div class="toast-path">{lastWatchedFile.split('/').pop()}</div>
+    </div>
+    <button class="toast-audit-btn" onclick={() => {
+      activeTab = 'analyze';
+      commandInput = lastWatchedFile;
+      showWatcherAlert = false;
+    }}>Analyze</button>
+  </div>
+{/if}
+
   </main>
 
 
@@ -385,4 +525,82 @@
   :global(.path-text) { color: #396cd8; font-weight: bold; }
   :global(.text-success) { color: #10b981 !important; font-weight: bold; }
   :global(.text-danger) { color: #ef4444 !important; font-weight: bold; }
+
+  .filter-logic-zone {
+    margin-top: 30px;
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+  }
+  .filter-title {
+    margin-bottom: 10px;
+    color: var(--primary);
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+  .filter-hint {
+    font-size: 11px;
+    opacity: 0.5;
+    margin-bottom: 15px;
+  }
+  .extension-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ext-chip {
+    background: #161616;
+    color: #555;
+    border: 1px solid #333;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .ext-chip.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+  }
+
+  .settings-group-header {
+    margin-bottom: 15px;
+    border-bottom: 1px solid #222;
+    padding-bottom: 10px;
+  }
+
+  .watcher-toast {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: #000;
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    z-index: 10000;
+    box-shadow: 0 0 20px rgba(57, 108, 216, 0.4);
+    animation: slide-in 0.3s ease-out;
+  }
+  .toast-icon { font-size: 24px; }
+  .toast-title { font-size: 11px; font-weight: bold; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
+  .toast-path { font-size: 13px; color: #fff; margin-top: 2px; }
+  .toast-audit-btn {
+    background: #111;
+    border: 1px solid #333;
+    color: #fff;
+    font-size: 10px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .toast-audit-btn:hover { background: var(--primary); border-color: var(--primary); }
+  @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+
 </style>
