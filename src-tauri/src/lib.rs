@@ -9,13 +9,9 @@ use sha2::{Sha256, Digest};
 use walkdir::WalkDir;
 use zip::read::ZipArchive;
 use rayon::prelude::*;
-
-// --- PHASE 4 WATCHER ---
-
 use notify::Watcher;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
-
 
 #[derive(Serialize)]
 struct LlmRequest {
@@ -101,19 +97,23 @@ fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport
 
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str) -> PathBuf {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let audit_root = PathBuf::from(home).join(".RAA_Audits");
-    let _ = fs::create_dir_all(&audit_root);
+    let audit_root = PathBuf::from(home).join("Documents/RAA_Audits");
+    
+    if !audit_root.exists() {
+        let _ = fs::create_dir_all(&audit_root);
+    }
+
     let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
     
     let manifest_name = if scan_type == "audit" {
-        ".raa-audit-terminal-commands".to_string()
+        "Gatekeeper-master-terminal-history.raa".to_string()
     } else {
-        format!(".raa-{}-{}-{}", scan_type, target_label.replace(".", "-").replace(" ", "_"), timestamp)
+        let clean_label = target_label.replace(".", "-").replace(" ", "_").replace("/", "_");
+        format!("Gatekeeper-{}-{}-{}.raa", scan_type, clean_label, timestamp)
     };
 
     let manifest_path = audit_root.join(manifest_name);
     
-    // THE FIX: Simplified template so the Parser doesn't get confused
     let log_entry = format!(
         "\n--- RAA FORENSIC REPORT ---\nType: {}\nTarget: {}\nHash: {}\nTimestamp: {}\nResult: \n{}\n---------------------------\n",
         scan_type, target_label, hash, Local::now().format("%Y-%m-%d %H:%M:%S"), result_text
@@ -124,6 +124,35 @@ fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str
         let _ = f.sync_all();
     }
     manifest_path
+}
+
+#[tauri::command]
+async fn audit_command(command_str: String, base_url: String, model_name: String) -> Result<RAAReport, String> {
+    let hash = get_content_hash(&command_str);
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+    // Pointing to the new visible Gatekeeper master file
+    let bible_path = PathBuf::from(home).join("Documents/RAA_Audits/Gatekeeper-master-terminal-history.raa");
+
+    if let Some(cached) = read_entry_from_disk(&bible_path, &hash) { 
+        return Ok(cached); 
+    }
+
+    let report = call_llm_auditor(&command_str, "terminal command", &base_url, &model_name, &command_str).await?;
+    let path = log_to_raa("audit", &command_str, &hash, &report.reasoning);
+    Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
+}
+
+#[tauri::command]
+async fn scan_file_integrity(file_path: String, base_url: String, model_name: String) -> Result<RAAReport, String> {
+    let path = PathBuf::from(&file_path);
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let hash = get_content_hash(&content);
+    let target_label = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+
+    let report = call_llm_auditor(&content, "file integrity", &base_url, &model_name, &target_label).await?;
+    let path = log_to_raa("analyze", &target_label, &hash, &report.reasoning);
+    
+    Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
 }
 
 async fn call_llm_auditor(input: &str, context_type: &str, base_url: &str, model_name: &str, target: &str) -> Result<RAAReport, String> {
@@ -163,7 +192,6 @@ async fn call_llm_auditor(input: &str, context_type: &str, base_url: &str, model
 #[allow(dead_code)]
 static WATCHER: Lazy<Mutex<Option<notify::RecommendedWatcher>>> = Lazy::new(|| Mutex::new(None));
 
-
 #[tauri::command]
 async fn check_integrity() -> Result<serde_json::Value, String> {
     // 1. Hardware Probes
@@ -180,51 +208,6 @@ async fn check_integrity() -> Result<serde_json::Value, String> {
         "vault_path": true,
         "disk_first_verification": true
     }))
-}
-
-
-
-#[tauri::command]
-async fn audit_command(command_str: String, base_url: String, model_name: String) -> Result<RAAReport, String> {
-    let hash = get_content_hash(&command_str);
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let bible_path = PathBuf::from(home).join(".RAA_Audits").join(".raa-audit-terminal-commands");
-
-    if let Some(cached) = read_entry_from_disk(&bible_path, &hash) { 
-        return Ok(cached); 
-    }
-
-    let report = call_llm_auditor(&command_str, "terminal command", &base_url, &model_name, &command_str).await?;
-    let path = log_to_raa("audit", &command_str, &hash, &report.reasoning);
-    Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
-}
-
-#[tauri::command]
-async fn scan_file_integrity(file_paths: Vec<String>, base_url: String, model_name: String) -> Result<RAAReport, String> {
-    let jobs: Vec<FileJob> = file_paths.into_par_iter().filter_map(|p| {
-        let path = PathBuf::from(&p);
-        let content = fs::read_to_string(&path).ok()?;
-        let hash = get_content_hash(&content);
-        Some(FileJob { path, size: content.len(), hash, content })
-    }).collect();
-
-    let target_label = if jobs.len() == 1 {
-        jobs[0].path.file_name().unwrap_or_default().to_string_lossy().into_owned()
-    } else {
-        format!("Collection-{}Files", jobs.len())
-    };
-
-    let mut combined = String::new();
-    let mut hash_src = String::new();
-    for job in &jobs { 
-        combined.push_str(&format!("--- FILE: {} ---\n{}\n\n", job.path.display(), job.content)); 
-        hash_src.push_str(&job.hash);
-    }
-    
-    let batch_hash = get_content_hash(&hash_src);
-    let report = call_llm_auditor(&combined, "batch files", &base_url, &model_name, &target_label).await?;
-    let path = log_to_raa("analyze", &target_label, &batch_hash, &report.reasoning);
-    Ok(read_entry_from_disk(&path, &batch_hash).unwrap_or(report))
 }
 
 #[tauri::command]
@@ -308,7 +291,6 @@ async fn generate_manifest(window: tauri::Window, folder_path: String, allowed_e
         current_bucket.push(job);
     }
     if !current_bucket.is_empty() { buckets.push(current_bucket); }
-
     let mut ledger_entries = String::new();
     for bucket in buckets {
         let mut batch_text = String::new();
@@ -358,7 +340,6 @@ async fn toggle_watcher(
     }
 
     println!("🕵️ Watcher: ARMED for {} target slots (Depth: {})", folders.len(), depth);
-
     let window_clone = window.clone();
     let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
         match res {
@@ -403,4 +384,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error");
 }
-

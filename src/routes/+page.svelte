@@ -11,13 +11,24 @@
   let watcherHistory = $state<string[]>([]);
   let showHistoryList = $state(false);
 
-  function startAuditFromQueue(file: string) {
+  async function startAuditFromQueue(file: string) {
+    // 1. Teleport to the tab
     activeTab = 'analyze';
+    
+    // 2. Set the path
     commandInput = file;
+    
+    // 3. Close the menu
     showHistoryList = false;
-    // Remove it from the pending list once clicked
+
+    // 4. Remove from queue
     watcherHistory = watcherHistory.filter(f => f !== file);
+
+    // 5. PULL THE TRIGGER (The Missing Link)
+    await tick(); // Let the UI update the tab first
+    handleAudit(); 
   }
+
 
 
   // THE WATCHTOWER TRIGGER (Keeps Watcher State & Rust in sync)
@@ -178,15 +189,29 @@
   async function handleBrowseFile() {
     resetResults();
     try {
-      const selected = await open({ multiple: true });
-      if (selected) {
+      // 1. Force single file selection to keep the .raa naming accurate
+      const selected = await open({ 
+        multiple: false, 
+        directory: false,
+        filters: [{ name: 'Forensic Target', extensions: ['py', 'js', 'rs', 'txt', 'env', 'json'] }]
+      });
+
+      if (selected && typeof selected === 'string') {
         isProcessing = true;
-        const paths = Array.isArray(selected) ? selected : [selected];
-        currentReport = await invoke("scan_file_integrity", { filePaths: paths, baseUrl, modelName });
+        // 2. Use 'filePath' to match Tauri's camelCase conversion of Rust's 'file_path'
+        currentReport = await invoke("scan_file_integrity", { 
+          filePath: selected, 
+          baseUrl, 
+          modelName 
+        });
       }
-    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), target_name: "Files", is_error: true }; }
-    finally { isProcessing = false; }
+    } catch (err) { 
+      currentReport = { verdict: "Error", reasoning: String(err), target_name: "Files", is_error: true }; 
+    } finally { 
+      isProcessing = false; 
+    }
   }
+
 
   async function handleBrowseArchive() {
     resetResults();
@@ -232,7 +257,16 @@
     {#if isDev}
       <button class="dev-tab" class:active={activeTab === 'integrity'} onclick={runIntegrityCheck}>🛡️ Integrity</button>
     {/if}
+
+    <!-- PHASE 4: ALERT HUB BUTTON -->
+    <button class="alert-hub-btn" onclick={() => showHistoryList = !showHistoryList}>
+      🕵️
+      {#if watcherHistory.length > 0}
+        <span class="alert-badge">{watcherHistory.length}</span>
+      {/if}
+    </button>
   </nav>
+
 
   {#if isProcessing}<div class="progress-line"></div>{/if}
 
@@ -406,21 +440,40 @@
       {/if}
     </div>
 
-      <!-- PHASE 4: WATCHER TOAST UI -->
-  {#if showWatcherAlert}
-  <div class="watcher-toast">
-    <span class="toast-icon">🕵️</span>
-    <div class="toast-body">
-      <div class="toast-title">DNA Change Detected</div>
-      <div class="toast-path">{lastWatchedFile.split('/').pop()}</div>
+    <!-- PHASE 4: WATCHER TOAST (ANNOUNCER ONLY) -->
+    {#if showWatcherAlert}
+    <div class="watcher-toast">
+      <span class="toast-icon">🕵️</span>
+      <div class="toast-body">
+        <div class="toast-title">DNA Change Detected</div>
+        <div class="toast-path">{lastWatchedFile.split('/').pop()}</div>
+      </div>
+      <!-- AUDIT BUTTON REMOVED: USE THE HUB INSTEAD -->
     </div>
-    <button class="toast-audit-btn" onclick={() => {
-      activeTab = 'analyze';
-      commandInput = lastWatchedFile;
-      showWatcherAlert = false;
-    }}>Analyze</button>
-  </div>
-{/if}
+  {/if}
+
+
+  <!-- PHASE 4: FORENSIC QUEUE DROPDOWN -->
+  {#if showHistoryList && watcherHistory.length > 0}
+    <div class="alert-dropdown shadow-vault">
+      <div class="dropdown-header">
+        <h4>DNA Forensic Queue</h4>
+        <button class="close-x" onclick={() => showHistoryList = false}>×</button>
+      </div>
+      
+      <div class="alert-list">
+        {#each watcherHistory as file}
+          <div class="alert-item">
+            <span class="file-name">{file.split('/').pop()}</span>
+            <button class="audit-link" onclick={() => startAuditFromQueue(file)}>Audit</button>
+          </div>
+        {/each}
+      </div>
+      
+      <button class="clear-btn" onclick={() => watcherHistory = []}>Clear All Alerts</button>
+    </div>
+  {/if}
+
 
   </main>
 
@@ -606,19 +659,78 @@
   .toast-icon { font-size: 24px; }
   .toast-title { font-size: 11px; font-weight: bold; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
   .toast-path { font-size: 13px; color: #fff; margin-top: 2px; }
-  .toast-audit-btn {
-    background: #111;
-    border: 1px solid #333;
-    color: #fff;
+
+  .alert-hub-btn {
+    position: relative;
+    margin-left: auto; /* Pushes the icon to the far right */
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 5px 10px;
+  }
+
+  .alert-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #ef4444; /* High-alert red */
+    color: white;
+    font-size: 9px;
+    font-weight: bold;
+    padding: 2px 5px;
+    border-radius: 10px;
+    line-height: 1;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+    pointer-events: none; /* Clicking the badge clicks the button */
+  }
+
+  .alert-dropdown {
+    position: fixed;
+    top: 65px;
+    right: 20px;
+    width: 300px;
+    background: #000;
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    padding: 15px;
+    z-index: 10000;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+  }
+  .dropdown-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .dropdown-header h4 { margin: 0; font-size: 11px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
+  .close-x { background: none; border: none; color: #444; cursor: pointer; font-size: 18px; }
+  .alert-list { max-height: 300px; overflow-y: auto; }
+  .alert-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #111;
+  }
+  .file-name { font-size: 11px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
+  .audit-link {
+    background: var(--primary);
+    border: none;
+    color: white;
     font-size: 10px;
-    padding: 6px 12px;
+    padding: 4px 10px;
     border-radius: 4px;
     cursor: pointer;
-    text-transform: uppercase;
-    transition: all 0.2s;
+    font-weight: bold;
   }
-  .toast-audit-btn:hover { background: var(--primary); border-color: var(--primary); }
-  @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  .clear-btn {
+    width: 100%;
+    margin-top: 15px;
+    background: #111;
+    border: 1px solid #222;
+    color: #666;
+    font-size: 10px;
+    padding: 6px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .clear-btn:hover { color: #ef4444; border-color: #ef4444; }
 
 
 </style>

