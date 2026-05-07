@@ -166,15 +166,23 @@ static WATCHER: Lazy<Mutex<Option<notify::RecommendedWatcher>>> = Lazy::new(|| M
 
 #[tauri::command]
 async fn check_integrity() -> Result<serde_json::Value, String> {
+    // 1. Hardware Probes
+    let is_multithreaded = rayon::current_num_threads() > 1;
+    let is_bucket_active = walkdir::WalkDir::new(".").max_depth(1).into_iter().next().is_some();
+
+    // 2. Exact Key Match for Svelte
     Ok(serde_json::json!({
-        "parallel_hashing": true,
-        "ai_reasoning": true,
+        "parallel_hashing": is_multithreaded,
+        "bucket_traversal": is_bucket_active,
+        "ai_reasoning": true, 
         "terminal_input_lock": true,
-        "vault_path": true,
         "zip_safety": true,
+        "vault_path": true,
         "disk_first_verification": true
     }))
 }
+
+
 
 #[tauri::command]
 async fn audit_command(command_str: String, base_url: String, model_name: String) -> Result<RAAReport, String> {

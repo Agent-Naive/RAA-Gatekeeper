@@ -260,28 +260,28 @@
           </div>
         </section>
 
-      {:else if activeTab === 'ledger'}
-        <section class="tool-view">
-          <h2>Forensic Ledger</h2>
-          <div class="ledger-viewer"><pre>{ledgerContent || "No logs found in ~/.RAA_Audits"}</pre></div>
-        </section>
+        {:else if activeTab === 'integrity'}
+  <section class="tool-view">
+    <h2>Integrity Guard</h2>
+    <div class="welcome-card">
+      {#if integrityReport}
+        <div class="integrity-grid">
+          <div class="check-item"><span>🏎️ Parallel Hashing:</span> <span class="check">{integrityReport.parallel_hashing ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>🪣 Bucket Traversal:</span> <span class="check">{integrityReport.bucket_traversal ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>📡 Reasoning:</span> <span class="check">{integrityReport.ai_reasoning ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>🔐 Input Lock:</span> <span class="check">{integrityReport.terminal_input_lock ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>📦 ZIP Safety:</span> <span class="check">{integrityReport.zip_safety ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>📁 Hidden Vault:</span> <span class="check">{integrityReport.vault_path ? '✅' : '❌'}</span></div>
+          <div class="check-item"><span>💾 Disk-First:</span> <span class="check">{integrityReport.disk_first_verification ? '✅' : '❌'}</span></div>
+        </div>
+      {:else}
+        <p style="color: #666; font-size: 11px; padding: 20px;">Establishing secure hardware link...</p>
+      {/if}
+    </div>
+  </section>
 
-      {:else if activeTab === 'integrity'}
-        <section class="tool-view">
-          <h2>Integrity Guard</h2>
-          <div class="welcome-card">
-            {#if integrityReport}
-              <div class="integrity-grid">
-                <div class="check-item"><span>🏎️ Parallel Hashing:</span> <span class="check">{integrityReport.parallel_hashing ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📡 Reasoning:</span> <span class="check">{integrityReport.ai_reasoning ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>🔐 Input Lock:</span> <span class="check">{integrityReport.terminal_input_lock ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📦 ZIP Safety:</span> <span class="check">{integrityReport.zip_safety ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>📁 Hidden Vault:</span> <span class="check">{integrityReport.vault_path ? '✅' : '❌'}</span></div>
-                <div class="check-item"><span>💾 Disk-First:</span> <span class="check">{integrityReport.disk_first_verification ? '✅' : '❌'}</span></div>
-              </div>
-            {/if}
-          </div>
-        </section>
+
+
 
         {:else if activeTab === 'settings'}
         <section class="tool-view">
@@ -509,7 +509,6 @@
 
   /* --- UTILITIES --- */
   .mission-success-toast { background: #000; border: 1px solid var(--primary); color: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
-  .ledger-viewer { background: #111; padding: 20px; border: 1px solid #333; border-radius: 8px; font-family: monospace; height: 500px; overflow-y: auto; text-align: left; white-space: pre-wrap; }
   .integrity-grid { display: grid; gap: 15px; }
   .check-item { display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 10px; }
   .app-footer { padding: 12px 30px; background: #000; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; font-size: 10px; color: #444; flex-shrink: 0; }
