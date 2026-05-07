@@ -4,10 +4,21 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
-    // --- WATCHER SETTINGS ---
-    let watcherEnabled = $state(localStorage.getItem("raa_watcher_enabled") === "true");
+  // --- WATCHER SETTINGS ---
+  let watcherEnabled = $state(localStorage.getItem("raa_watcher_enabled") === "true");
   let watcherFolders = $state<string[]>(JSON.parse(localStorage.getItem("raa_watcher_folders") || "[]"));
   let watcherDepth = $state(parseInt(localStorage.getItem("raa_watcher_depth") || "3"));
+  let watcherHistory = $state<string[]>([]);
+  let showHistoryList = $state(false);
+
+  function startAuditFromQueue(file: string) {
+    activeTab = 'analyze';
+    commandInput = file;
+    showHistoryList = false;
+    // Remove it from the pending list once clicked
+    watcherHistory = watcherHistory.filter(f => f !== file);
+  }
+
 
   // THE WATCHTOWER TRIGGER (Keeps Watcher State & Rust in sync)
   $effect(() => {
@@ -32,19 +43,27 @@
   $effect(() => {
     let unlisten: any;
     async function startListening() {
-      // This catches the "SPARK" we saw in your terminal
       unlisten = await listen("watcher-event", (event: any) => {
-        console.log("👂 UI HEARD SPARK:", event.payload);
-        lastWatchedFile = event.payload;
-        showWatcherAlert = true;
+        // 1. Define 'file' from the payload so the rest of the code works
+        const file = event.payload; 
         
-        // Auto-hide alert after 8 seconds
+        console.log("👂 UI HEARD SPARK:", file);
+        lastWatchedFile = file;
+        showWatcherAlert = true;
+
+        // 2. This is your logic - fixed to use the 'file' variable
+        if (!watcherHistory.includes(file)) {
+          watcherHistory = [file, ...watcherHistory].slice(0, 10); 
+        }
+
+        // 3. Add the timer back so the toast eventually goes away
         setTimeout(() => { showWatcherAlert = false; }, 8000);
-      });
+      }); // <--- This closing brace was missing
     }
     startListening();
     return () => { if (unlisten) unlisten(); };
   });
+
 
   // --- CORE CONFIG & PERSISTENCE ---
   let baseUrl = $state(localStorage.getItem("raa_base_url") || ""); 
