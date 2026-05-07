@@ -4,110 +4,156 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
-  // --- WATCHER SETTINGS ---
-  let watcherEnabled = $state(localStorage.getItem("raa_watcher_enabled") === "true");
-  let watcherFolders = $state<string[]>(JSON.parse(localStorage.getItem("raa_watcher_folders") || "[]"));
-  let watcherDepth = $state(parseInt(localStorage.getItem("raa_watcher_depth") || "3"));
+  let startTime = $state(0);
+  let handoffTime = $state(0); // This is your "Lap"
+  let totalTime = $state(0);
+  let handoffTimerId = $state<NodeJS.Timeout | number | null>(null);
+  let totalTimerId = $state<NodeJS.Timeout | number | null>(null);
+
+  function startTimers() {
+    startTime = Date.now();
+    handoffTime = 0;
+    totalTime = 0;
+    // Start real-time updates for handoff and total timers
+    handoffTimerId = setInterval(() => {
+      handoffTime = Date.now() - startTime;
+    }, 1);
+    totalTimerId = setInterval(() => {
+      totalTime = Date.now() - startTime;
+    }, 1);
+  }
+
+  function stopHandoffTimer() {
+    if (handoffTimerId !== null) {
+      clearInterval(handoffTimerId);
+      handoffTimerId = null;
+      handoffTime = Date.now() - startTime; // Finalize the value
+    }
+  }
+
+  function stopTotalTimer() {
+    if (totalTimerId !== null) {
+      clearInterval(totalTimerId);
+      totalTimerId = null;
+      totalTime = Date.now() - startTime; // Finalize the value
+    }
+  }
+
+  let watcherEnabled = $state(
+    localStorage.getItem("raa_watcher_enabled") === "true",
+  );
+  let watcherFolders = $state<string[]>(
+    JSON.parse(localStorage.getItem("raa_watcher_folders") || "[]"),
+  );
+  let watcherDepth = $state(
+    parseInt(localStorage.getItem("raa_watcher_depth") || "3"),
+  );
   let watcherHistory = $state<string[]>([]);
   let showHistoryList = $state(false);
 
   async function startAuditFromQueue(file: string) {
-    // 1. Teleport to the tab
-    activeTab = 'analyze';
-    
-    // 2. Set the path
+    activeTab = "analyze";
+
     commandInput = file;
-    
-    // 3. Close the menu
+
     showHistoryList = false;
 
-    // 4. Remove from queue
-    watcherHistory = watcherHistory.filter(f => f !== file);
+    watcherHistory = watcherHistory.filter((f) => f !== file);
 
-    // 5. PULL THE TRIGGER (The Missing Link)
-    await tick(); // Let the UI update the tab first
-    handleAudit(); 
+    await tick();
+    handleAudit();
   }
 
-
-
-  // THE WATCHTOWER TRIGGER (Keeps Watcher State & Rust in sync)
   $effect(() => {
     localStorage.setItem("raa_watcher_enabled", watcherEnabled.toString());
     localStorage.setItem("raa_watcher_folders", JSON.stringify(watcherFolders));
     localStorage.setItem("raa_watcher_depth", watcherDepth.toString());
-
-    // Tell Rust to update the background thread
-    invoke("toggle_watcher", { 
-      enabled: watcherEnabled, 
-      folders: watcherFolders, 
-      depth: watcherDepth 
+    invoke("toggle_watcher", {
+      enabled: watcherEnabled,
+      folders: watcherFolders,
+      depth: watcherDepth,
     })
-    .then(() => console.log("🕵️ UI: Watcher Handshake SUCCESS"))
-    .catch(e => console.error("🚨 UI: Watcher Handshake FAILED", e));
+      .then(() => console.log("🕵️ UI: Watcher Handshake SUCCESS"))
+      .catch((e) => console.error("🚨 UI: Watcher Handshake FAILED", e));
   });
 
-    // --- PHASE 4: THE SILENT LISTENER (The Ear) ---
-    let lastWatchedFile = $state("");
+  let lastWatchedFile = $state("");
   let showWatcherAlert = $state(false);
 
   $effect(() => {
     let unlisten: any;
     async function startListening() {
       unlisten = await listen("watcher-event", (event: any) => {
-        // 1. Define 'file' from the payload so the rest of the code works
-        const file = event.payload; 
-        
+        const file = event.payload;
+
         console.log("👂 UI HEARD SPARK:", file);
         lastWatchedFile = file;
         showWatcherAlert = true;
 
-        // 2. This is your logic - fixed to use the 'file' variable
         if (!watcherHistory.includes(file)) {
-          watcherHistory = [file, ...watcherHistory].slice(0, 10); 
+          watcherHistory = [file, ...watcherHistory].slice(0, 10);
         }
 
-        // 3. Add the timer back so the toast eventually goes away
-        setTimeout(() => { showWatcherAlert = false; }, 8000);
-      }); // <--- This closing brace was missing
+        setTimeout(() => {
+          showWatcherAlert = false;
+        }, 8000);
+      });
     }
     startListening();
-    return () => { if (unlisten) unlisten(); };
+    return () => {
+      if (unlisten) unlisten();
+    };
   });
 
-
-  // --- CORE CONFIG & PERSISTENCE ---
-  let baseUrl = $state(localStorage.getItem("raa_base_url") || ""); 
+  let baseUrl = $state(localStorage.getItem("raa_base_url") || "");
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
-  let isConfigured = $derived(baseUrl.trim().length > 0 && modelName.trim().length > 0);
+  let vaultRootPath = $state(localStorage.getItem("raa_vault_root_path") || "");
+  let isConfigured = $derived(
+    baseUrl.trim().length > 0 && modelName.trim().length > 0,
+  );
   let isDev = $state(false);
 
   $effect(() => {
     localStorage.setItem("raa_base_url", baseUrl);
     localStorage.setItem("raa_model_name", modelName);
+    localStorage.setItem("raa_vault_root_path", vaultRootPath);
   });
 
-  let activeTab = $state("welcome"); 
-  let isProcessing = $state(false); 
-  let currentReport = $state({ verdict: "", reasoning: "", target_name: "", is_error: false });
+  async function selectVaultRootPath() {
+    const selected = await open({ directory: true, multiple: false });
+    if (selected && !Array.isArray(selected)) {
+      vaultRootPath = selected;
+    }
+  }
+
+  let activeTab = $state("welcome");
+  let isProcessing = $state(false);
+  let currentReport = $state({
+    verdict: "",
+    reasoning: "",
+    target_name: "",
+    is_error: false,
+  });
   let certMsg = $state("");
   let commandInput = $state("");
   let ledgerContent = $state("");
   let integrityReport = $state<any>(null);
 
-  // --- MONITOR STATE ---
-  let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]); 
+  let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
   let activeFiles = $state<string[]>([]);
   let skippedFiles = $state<string[]>([]);
   let activeScrollContainer: HTMLElement | undefined = $state();
   let skippedScrollContainer: HTMLElement | undefined = $state();
 
   async function scrollToBottom(el: HTMLElement | undefined) {
-    if (el) { await tick(); el.scrollTop = el.scrollHeight; }
+    if (el) {
+      await tick();
+      el.scrollTop = el.scrollHeight;
+    }
   }
 
   onMount(() => {
-    isDev = window.location.hostname === 'localhost';
+    isDev = window.location.hostname === "localhost";
     let unlisten: any;
     async function setupListener() {
       unlisten = await listen("scan-event", (event: any) => {
@@ -122,20 +168,29 @@
       });
     }
     setupListener();
-    return () => { if (unlisten) unlisten(); };
+    return () => {
+      if (unlisten) unlisten();
+    };
   });
 
-  // --- UI PARSING LOGIC ---
   function resetResults() {
-    currentReport = { verdict: "", reasoning: "", target_name: "", is_error: false };
-    certMsg = ""; activeFiles = []; skippedFiles = [];
+    currentReport = {
+      verdict: "",
+      reasoning: "",
+      target_name: "",
+      is_error: false,
+    };
+    certMsg = "";
+    activeFiles = [];
+    skippedFiles = [];
   }
 
   function getReportSegments(text: string) {
     if (!text) return [];
-    let segments = text.split(/(?:\n|^)(?=\d+\.|\*\*Item|Item\s\d+:|---\n)/g)
-                       .filter(s => s.trim().length > 5);
-    
+    let segments = text
+      .split(/(?:\n|^)(?=\d+\.|\*\*Item|Item\s\d+:|---\n)/g)
+      .filter((s) => s.trim().length > 5);
+
     if (segments.length === 0 && text.trim().length > 0) {
       segments = [text];
     }
@@ -143,16 +198,22 @@
     return segments;
   }
 
-
   function highlightSegment(text: string) {
     if (!text) return "";
     return text
-      .replace(/([\/\w\-_.]+\.(?:md|rs|ts|js|py|yml|zip|toml|json|txt|sh))/gi, '<span class="path-text">$1</span>')
-      .replace(/(SAFE|CERTIFIED|CLEAN|ALL SAFE)/g, '<span class="text-success">$1</span>')
-      .replace(/(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)/g, '<span class="text-danger">$1</span>');
+      .replace(
+        /([\/\w\-_.]+\.(?:md|rs|ts|js|py|yml|zip|toml|json|txt|sh))/gi,
+        '<span class="path-text">$1</span>',
+      )
+      .replace(
+        /(SAFE|CERTIFIED|CLEAN|ALL SAFE)/g,
+        '<span class="text-success">$1</span>',
+      )
+      .replace(
+        /(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)/g,
+        '<span class="text-danger">$1</span>',
+      );
   }
-
-  // --- HANDLERS ---
 
   async function addWatcherFolder() {
     if (watcherFolders.length >= 5) return;
@@ -169,97 +230,274 @@
   async function handleAudit(e?: Event) {
     if (e) e.preventDefault();
     if (!commandInput.trim()) return;
-    resetResults(); 
-    isProcessing = true;
-    try { 
-      // ADDED: <any> to tell TypeScript the incoming data is valid
-      const report = await invoke<any>("audit_command", { commandStr: commandInput, baseUrl, modelName });
-      currentReport = report;
-      await tick(); 
-      console.log("Updated currentReport:", currentReport);
-    } 
-    catch (err) { 
-      currentReport = { verdict: "Error", reasoning: String(err), target_name: "Audit", is_error: true };
-      await tick();
+    resetResults();
+    
+    // Failsafe: If no vault path is set, default to Documents/RAA_Vault
+    if (!vaultRootPath) {
+      // Default to user's Documents folder (Note: This may require Tauri API for exact path)
+      vaultRootPath = "~/Documents";
+      console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
+      // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
+      await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
+        console.error("Failed to create RAA_Vault directory:", err);
+      });
     }
-    finally { isProcessing = false; }
-  }
+    
+    // 1. Mark the absolute start and start real-time timers
+    startTimers();
+    
+    isProcessing = true;
+    try {
+      // 2. LAP TICK: Time to prepare the job and hit the Mac Mini's Rust bridge
+      stopHandoffTimer();
 
+      const report = await invoke<any>("audit_command", {
+        commandStr: commandInput,
+        baseUrl,
+        modelName,
+        vaultRootPath
+      });
+      
+      // 3. COMPLETION: The Oracle has spoken
+      stopTotalTimer();
+
+      currentReport = report;
+      commandInput = ""; 
+
+      await tick();
+      console.log("Updated currentReport:", currentReport);
+    } catch (err) {
+      stopHandoffTimer();
+      stopTotalTimer();
+      currentReport = {
+        verdict: "Error",
+        reasoning: String(err),
+        target_name: "Audit",
+        is_error: true,
+      };
+      await tick();
+    } finally {
+      isProcessing = false;
+    }
+  }
 
   async function handleBrowseFile() {
     resetResults();
     try {
-      // 1. Force single file selection to keep the .raa naming accurate
-      const selected = await open({ 
-        multiple: false, 
-        directory: false,
-        filters: [{ name: 'Forensic Target', extensions: ['py', 'js', 'rs', 'txt', 'env', 'json'] }]
-      });
-
-      if (selected && typeof selected === 'string') {
-        isProcessing = true;
-        // 2. Use 'filePath' to match Tauri's camelCase conversion of Rust's 'file_path'
-        currentReport = await invoke("scan_file_integrity", { 
-          filePath: selected, 
-          baseUrl, 
-          modelName 
+      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
+      if (!vaultRootPath) {
+        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
+        vaultRootPath = "~/Documents";
+        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
+        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
+        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
+          console.error("Failed to create RAA_Vault directory:", err);
         });
       }
-    } catch (err) { 
-      currentReport = { verdict: "Error", reasoning: String(err), target_name: "Files", is_error: true }; 
-    } finally { 
-      isProcessing = false; 
+
+      // 1. Mark the absolute start and start real-time timers
+      startTimers();
+
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: "Forensic Target",
+            extensions: ["env", "ipynb", "js", "json", "jsonl", "md", "py", "rs", "sh", "toml", "ts", "txt", "yml"],
+          },
+        ],
+      });
+
+      if (selected && typeof selected === "string") {
+        // 2. LAP TICK: Time to prepare the job
+        stopHandoffTimer();
+        isProcessing = true;
+        currentReport = await invoke("scan_file_integrity", {
+          filePath: selected,
+          baseUrl,
+          modelName,
+          vaultRootPath
+        });
+        // 3. COMPLETION: The Oracle has spoken
+        stopTotalTimer();
+      }
+    } catch (err) {
+      stopHandoffTimer();
+      stopTotalTimer();
+      currentReport = {
+        verdict: "Error",
+        reasoning: String(err),
+        target_name: "Files",
+        is_error: true,
+      };
+    } finally {
+      isProcessing = false;
     }
   }
-
 
   async function handleBrowseArchive() {
     resetResults();
     try {
-      const selected = await open({ multiple: false, filters: [{ name: 'Archives', extensions: ['zip'] }] });
-      if (selected && !Array.isArray(selected)) {
-        isProcessing = true;
-        currentReport = await invoke("scan_compressed_archive", { zipPath: selected, allowedExtensions: allowedExts, baseUrl, modelName });
+      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
+      if (!vaultRootPath) {
+        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
+        vaultRootPath = "~/Documents";
+        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
+        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
+        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
+          console.error("Failed to create RAA_Vault directory:", err);
+        });
       }
-    } catch (err) { currentReport = { verdict: "Error", reasoning: String(err), target_name: "Archive", is_error: true }; }
-    finally { isProcessing = false; }
+
+      // 1. Mark the absolute start and start real-time timers
+      startTimers();
+
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Archives", extensions: ["zip"] }],
+      });
+      if (selected && !Array.isArray(selected)) {
+        // 2. LAP TICK: Time to prepare the job
+        stopHandoffTimer();
+        isProcessing = true;
+        currentReport = await invoke("scan_compressed_archive", {
+          zipPath: selected,
+          allowedExtensions: allowedExts,
+          baseUrl,
+          modelName,
+          vaultRootPath
+        });
+        // 3. COMPLETION: The Oracle has spoken
+        stopTotalTimer();
+      }
+    } catch (err) {
+      stopHandoffTimer();
+      stopTotalTimer();
+      currentReport = {
+        verdict: "Error",
+        reasoning: String(err),
+        target_name: "Archive",
+        is_error: true,
+      };
+    } finally {
+      isProcessing = false;
+    }
   }
 
   async function handleCertifyFolder() {
     resetResults();
     try {
+      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
+      if (!vaultRootPath) {
+        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
+        vaultRootPath = "~/Documents";
+        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
+        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
+        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
+          console.error("Failed to create RAA_Vault directory:", err);
+        });
+      }
+
+      // 1. Mark the absolute start and start real-time timers
+      startTimers();
+
       const selectedFolder = await open({ directory: true, multiple: false });
       if (selectedFolder) {
+        // 2. LAP TICK: Time to prepare the job
+        stopHandoffTimer();
         isProcessing = true;
-        certMsg = await invoke("generate_manifest", { folderPath: selectedFolder, allowedExtensions: allowedExts, baseUrl, modelName });
+        certMsg = await invoke("generate_manifest", {
+          folderPath: selectedFolder,
+          allowedExtensions: allowedExts,
+          baseUrl,
+          modelName,
+          vaultRootPath
+        });
+        // 3. COMPLETION: The Oracle has spoken
+        stopTotalTimer();
       }
-    } catch (err) { certMsg = String(err); } 
-    finally { isProcessing = false; }
+    } catch (err) {
+      stopHandoffTimer();
+      stopTotalTimer();
+      certMsg = String(err);
+    } finally {
+      isProcessing = false;
+    }
   }
 
-  async function loadLedger() { activeTab = 'ledger'; ledgerContent = await invoke("read_ledger"); }
-  async function runIntegrityCheck() { activeTab = 'integrity'; integrityReport = await invoke("check_integrity"); }
+  async function loadLedger() {
+    activeTab = "ledger";
+    ledgerContent = await invoke("read_ledger", { vaultRootPath });
+  }
+  async function runIntegrityCheck() {
+    activeTab = "integrity";
+    integrityReport = await invoke("check_integrity");
+  }
 </script>
 
 <div class="app-layout" class:scanning={isProcessing}>
   <header class="top-bar">
-    <button type="button" class="logo-btn" onclick={() => activeTab = 'welcome'}>🛡️ RAA GATEKEEPER</button>
+    <button
+      type="button"
+      class="logo-btn"
+      onclick={() => (activeTab = "welcome")}>🛡️ RAA GATEKEEPER</button
+    >
     <div class="version-tag">v0.3.0-PHASE-3</div>
   </header>
 
   <nav class="nav-bar">
-    <button class:active={activeTab === 'audit'} onclick={() => {activeTab = 'audit'; resetResults();}}>📟 Audit</button>
-    <button class:active={activeTab === 'analyze'} onclick={() => {activeTab = 'analyze'; resetResults();}}>🔍 Analyze</button>
-    <button class:active={activeTab === 'archive'} onclick={() => {activeTab = 'archive'; resetResults();}}>📦 Archive</button>
-    <button class:active={activeTab === 'certify'} onclick={() => {activeTab = 'certify'; resetResults();}}>🔏 Certify</button>
-    <button class:active={activeTab === 'ledger'} onclick={loadLedger}>📜 Ledger</button>
-    <button class:active={activeTab === 'settings'} onclick={() => activeTab = 'settings'}>⚙️ Settings</button>
+    <button
+      class:active={activeTab === "audit"}
+      onclick={() => {
+        activeTab = "audit";
+        resetResults();
+      }}>📟 Audit</button
+    >
+    <button
+      class:active={activeTab === "analyze"}
+      onclick={() => {
+        activeTab = "analyze";
+        resetResults();
+      }}>🔍 Analyze</button
+    >
+    <button
+      class:active={activeTab === "archive"}
+      onclick={() => {
+        activeTab = "archive";
+        resetResults();
+      }}>📦 Archive</button
+    >
+    <button
+      class:active={activeTab === "certify"}
+      onclick={() => {
+        activeTab = "certify";
+        resetResults();
+      }}>🔏 Certify</button
+    >
+    <button class:active={activeTab === "ledger"} onclick={loadLedger}
+      >📜 Ledger</button
+    >
+    <button
+      class:active={activeTab === "settings"}
+      onclick={() => (activeTab = "settings")}>⚙️ Settings</button
+    >
     {#if isDev}
-      <button class="dev-tab" class:active={activeTab === 'integrity'} onclick={runIntegrityCheck}>🛡️ Integrity</button>
+      <button
+        class="dev-tab"
+        class:active={activeTab === "integrity"}
+        onclick={runIntegrityCheck}>🛡️ Integrity</button
+      >
     {/if}
+    
+    <div class="timing-metrics" style="margin-left: auto; display: flex; align-items: center; font-size: 12px; color: #666; padding: 0 15px;">
+      <span>LOCAL: {handoffTime}ms | ORACLE: {(totalTime / 1000).toFixed(2)}s</span>
+    </div>
 
-    <!-- PHASE 4: ALERT HUB BUTTON -->
-    <button class="alert-hub-btn" onclick={() => showHistoryList = !showHistoryList}>
+    <button
+      class="alert-hub-btn"
+      onclick={() => (showHistoryList = !showHistoryList)}
+    >
       🕵️
       {#if watcherHistory.length > 0}
         <span class="alert-badge">{watcherHistory.length}</span>
@@ -267,101 +505,200 @@
     </button>
   </nav>
 
-
   {#if isProcessing}<div class="progress-line"></div>{/if}
 
   <main class="content-pane">
     <div class="view-wrapper">
-      {#if activeTab === 'welcome'}
+      {#if activeTab === "welcome"}
         <section class="tool-view">
-          <h2>System Status: {isConfigured ? 'ONLINE' : 'STANDBY'}</h2>
-          <div class="welcome-card"><p class="subtitle">Forensic protocols armed. Logs in ~/.RAA_Audits</p></div>
+          <h2>System Status: {isConfigured ? "ONLINE" : "STANDBY"}</h2>
+          <div class="welcome-card">
+          <p class="subtitle">
+            Forensic protocols armed. Logs in {vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "(Set Location in Settings)"}
+          </p>
+          </div>
         </section>
-
-      {:else if activeTab === 'audit'}
+      {:else if activeTab === "audit"}
         <section class="tool-view">
           <h2>Command Audit</h2>
+          <p class="subtitle" title="Click to verify the command with AI">
+            Validate terminal commands against AI security fingerprints before execution.
+          </p>
           <form class="tool-box" onsubmit={handleAudit}>
-            <input type="text" bind:value={commandInput} placeholder="e.g. ls -la" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="terminal-input" />
-            <button class="primary-btn" type="submit" disabled={isProcessing}>Audit</button>
+            <input
+              type="text"
+              bind:value={commandInput}
+              placeholder="e.g. ls -la"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              autocomplete="off"
+              class="terminal-input"
+            />
+            <button
+              class="primary-btn"
+              type="submit"
+              disabled={isProcessing}
+            >
+              Audit
+            </button>
           </form>
         </section>
-
-      {:else if activeTab === 'analyze'}
+      {:else if activeTab === "analyze"}
         <section class="tool-view">
           <h2>Analyze Files</h2>
-          <button class="primary-btn" onclick={handleBrowseFile} disabled={isProcessing}>Browse & Scan Files</button>
+          <p class="subtitle" title="Deep scan: Verifying integrity & AI analysis">
+            Mathematical Hash + deep AI verdict for specific system files.
+          </p>
+          <button
+            class="primary-btn"
+            onclick={handleBrowseFile}
+            disabled={isProcessing}>Browse & Scan Files</button
+          >
         </section>
-
-      {:else if activeTab === 'archive'}
+      {:else if activeTab === "archive"}
         <section class="tool-view">
           <h2>Deep Archive Audit</h2>
-          <button class="primary-btn" onclick={handleBrowseArchive} disabled={isProcessing}>Select ZIP Archive</button>
+          <p class="subtitle" title="Secure AI-driven check of file contents without unpacking.">
+            Audit zip contents without extraction to detect hidden payloads or obscured threats.
+          </p>
+          <button
+            class="primary-btn"
+            onclick={handleBrowseArchive}
+            disabled={isProcessing}>Select ZIP Archive</button
+          >
           <div class="dual-pane-monitor">
-            <div class="pane"><h4>📡 Audited</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f}</div>{/each}</div></div>
-            <div class="pane"><h4>🚫 Skipped</h4><div class="scroll-list" bind:this={skippedScrollContainer}>{#each skippedFiles as f}<div class="file-entry muted">{f}</div>{/each}</div></div>
+            <div class="pane">
+              <h4>📡 Audited</h4>
+              <div class="scroll-list" bind:this={activeScrollContainer}>
+                {#each activeFiles as f}<div class="file-entry">{f}</div>{/each}
+              </div>
+            </div>
+            <div class="pane">
+              <h4>🚫 Skipped</h4>
+              <div class="scroll-list" bind:this={skippedScrollContainer}>
+                {#each skippedFiles as f}<div class="file-entry muted">
+                    {f}
+                  </div>{/each}
+              </div>
+            </div>
           </div>
         </section>
-
-      {:else if activeTab === 'certify'}
+      {:else if activeTab === "certify"}
         <section class="tool-view">
           <h2>Certify Project</h2>
-          <button class="primary-btn" onclick={handleCertifyFolder} disabled={isProcessing}>Start Certification</button>
+          <p class="subtitle" title="Generate a cryptographic audit manifest for all files within a project directory.">
+            Use the RAA Gatekeeper to Certify a large Repository of files.
+          </p>
+          <button
+            class="primary-btn"
+            onclick={handleCertifyFolder}
+            disabled={isProcessing}>Start Certification</button
+          >
           <div class="dual-pane-monitor">
-            <div class="pane"><h4>📡 Live</h4><div class="scroll-list" bind:this={activeScrollContainer}>{#each activeFiles as f}<div class="file-entry">{f.split('/').pop()}</div>{/each}</div></div>
-            <div class="pane"><h4>🚫 Skipped</h4><div class="scroll-list" bind:this={skippedScrollContainer}>{#each skippedFiles as f}<div class="file-entry muted">{f.split('/').pop()}</div>{/each}</div></div>
+            <div class="pane">
+              <h4>📡 Live</h4>
+              <div class="scroll-list" bind:this={activeScrollContainer}>
+                {#each activeFiles as f}<div class="file-entry">
+                    {f.split("/").pop()}
+                  </div>{/each}
+              </div>
+            </div>
+            <div class="pane">
+              <h4>🚫 Skipped</h4>
+              <div class="scroll-list" bind:this={skippedScrollContainer}>
+                {#each skippedFiles as f}<div class="file-entry muted">
+                    {f.split("/").pop()}
+                  </div>{/each}
+              </div>
+            </div>
           </div>
         </section>
-
-        {:else if activeTab === 'integrity'}
-  <section class="tool-view">
-    <h2>Integrity Guard</h2>
-    <div class="welcome-card">
-      {#if integrityReport}
-        <div class="integrity-grid">
-          <div class="check-item"><span>🏎️ Parallel Hashing:</span> <span class="check">{integrityReport.parallel_hashing ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>🪣 Bucket Traversal:</span> <span class="check">{integrityReport.bucket_traversal ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>📡 Reasoning:</span> <span class="check">{integrityReport.ai_reasoning ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>🔐 Input Lock:</span> <span class="check">{integrityReport.terminal_input_lock ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>📦 ZIP Safety:</span> <span class="check">{integrityReport.zip_safety ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>📁 Hidden Vault:</span> <span class="check">{integrityReport.vault_path ? '✅' : '❌'}</span></div>
-          <div class="check-item"><span>💾 Disk-First:</span> <span class="check">{integrityReport.disk_first_verification ? '✅' : '❌'}</span></div>
-        </div>
-      {:else}
-        <p style="color: #666; font-size: 11px; padding: 20px;">Establishing secure hardware link...</p>
-      {/if}
-    </div>
-  </section>
-
-
-
-
-        {:else if activeTab === 'settings'}
+      {:else if activeTab === "integrity"}
+        <section class="tool-view">
+          <h2>Integrity Guard</h2>
+          <div class="welcome-card">
+            {#if integrityReport}
+              <div class="integrity-grid">
+                <div class="check-item">
+                  <span>🏎️ Parallel Hashing:</span>
+                  <span class="check"
+                    >{integrityReport.parallel_hashing ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>🪣 Bucket Traversal:</span>
+                  <span class="check"
+                    >{integrityReport.bucket_traversal ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>📡 Reasoning:</span>
+                  <span class="check"
+                    >{integrityReport.ai_reasoning ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>🔐 Input Lock:</span>
+                  <span class="check"
+                    >{integrityReport.terminal_input_lock ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>📦 ZIP Safety:</span>
+                  <span class="check"
+                    >{integrityReport.zip_safety ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>📁 Hidden Vault:</span>
+                  <span class="check"
+                    >{integrityReport.vault_path ? "✅" : "❌"}</span
+                  >
+                </div>
+                <div class="check-item">
+                  <span>💾 Disk-First:</span>
+                  <span class="check"
+                    >{integrityReport.disk_first_verification
+                      ? "✅"
+                      : "❌"}</span
+                  >
+                </div>
+              </div>
+            {:else}
+              <p style="color: #666; font-size: 11px; padding: 20px;">
+                Establishing secure hardware link...
+              </p>
+            {/if}
+          </div>
+        </section>
+      {:else if activeTab === "settings"}
         <section class="tool-view">
           <h2>Global Settings</h2>
           <div class="settings-box">
-            
-            <!-- 1. AI CORE CONFIGURATION -->
             <div class="settings-group-header">
-              <h4 class="filter-title">AI Core Configuration</h4>
+              <h4 class="filter-title">🧠 AI Core Configuration</h4>
             </div>
             <label>Base URL <input type="text" bind:value={baseUrl} /></label>
-            <label>Model Name <input type="text" bind:value={modelName} /></label>
-            
-            <!-- 2. AUDIT FILTER LOGIC (CHIPS) -->
+            <label
+              >Model Name <input type="text" bind:value={modelName} /></label
+            >
+
             <div class="filter-logic-zone">
-              <h4 class="filter-title">Audit Filter Logic</h4>
-              <p class="filter-hint">Targeted extensions for Finder & LLM scan:</p>
-              
+              <h4 class="filter-title">🔍 Audit Filter Logic</h4>
+              <p class="filter-hint">
+                Targeted extensions for Finder & LLM scan:
+              </p>
+
               <div class="extension-grid">
                 {#each [".env", ".ipynb", ".js", ".json", ".jsonl", ".md", ".py", ".rs", ".sh", ".toml", ".ts", ".txt", ".yml", ".zip"] as ext}
-                  <button 
+                  <button
                     type="button"
                     class="ext-chip"
                     class:active={allowedExts.includes(ext)}
                     onclick={() => {
                       if (allowedExts.includes(ext)) {
-                        allowedExts = allowedExts.filter(e => e !== ext);
+                        allowedExts = allowedExts.filter((e) => e !== ext);
                       } else {
                         allowedExts = [...allowedExts, ext];
                       }
@@ -373,37 +710,103 @@
               </div>
             </div>
 
-            <!-- 3. SILENT WATCHER SLOTS (PHASE 4) -->
-            <div class="filter-logic-zone" style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;">
+            <div
+              class="filter-logic-zone"
+              style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;"
+            >
+              <h4 class="filter-title">📁 RAA Vault Location</h4>
+              <p class="filter-hint">
+                Select the root directory for RAA_Vault (folder name is fixed):
+              </p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                {#if vaultRootPath}
+                  <div
+                    class="folder-slot"
+                    style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
+                  >
+                    <span
+                      class="path-text"
+                      style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                    >{vaultRootPath}</span>
+                    <button
+                      class="remove-btn"
+                      style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;"
+                      onclick={() => vaultRootPath = ""}
+                    >×</button>
+                  </div>
+                {/if}
+                <button
+                  class="add-slot-btn"
+                  style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
+                  onclick={selectVaultRootPath}
+                >
+                  + Select Root Directory for RAA_Vault
+                </button>
+              </div>
+            </div>
+
+            <div
+              class="filter-logic-zone"
+              style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;"
+            >
               <h4 class="filter-title">🕵️ Silent Watcher (Phase 4)</h4>
-              
-              <div class="watcher-controls" style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;">
-                <label class="toggle-label" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+
+              <div
+                class="watcher-controls"
+                style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;"
+              >
+                <label
+                  class="toggle-label"
+                  style="display: flex; align-items: center; gap: 10px; cursor: pointer;"
+                >
                   <input type="checkbox" bind:checked={watcherEnabled} />
-                  Watcher Status: <span class={watcherEnabled ? 'text-success' : 'text-danger'}>{watcherEnabled ? 'ARMED' : 'OFF'}</span>
+                  Watcher Status:
+                  <span class={watcherEnabled ? "text-success" : "text-danger"}
+                    >{watcherEnabled ? "ARMED" : "OFF"}</span
+                  >
                 </label>
-                
+
                 <label style="font-size: 11px; color: #666;">
-                  Depth Limit: 
-                  <input type="number" min="1" max="5" bind:value={watcherDepth} 
-                    style="width: 50px; background: #111; border: 1px solid #333; color: white; margin-left: 5px; padding: 2px 5px;" />
+                  Depth Limit:
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    bind:value={watcherDepth}
+                    style="width: 50px; background: #111; border: 1px solid #333; color: white; margin-left: 5px; padding: 2px 5px;"
+                  />
                 </label>
               </div>
 
               <div class="folder-slots">
-                <p class="filter-hint">Monitored Folder Slots ({watcherFolders.length}/5):</p>
+                <p class="filter-hint">
+                  Monitored Folder Slots ({watcherFolders.length}/5):
+                </p>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
                   {#each watcherFolders as folder, i}
-                    <div class="folder-slot" style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
-                      <span class="path-text" style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{folder}</span>
-                      <button class="remove-btn" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;" onclick={() => removeWatcherFolder(i)}>×</button>
+                    <div
+                      class="folder-slot"
+                      style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
+                    >
+                      <span
+                        class="path-text"
+                        style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                        >{folder}</span
+                      >
+                      <button
+                        class="remove-btn"
+                        style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;"
+                        onclick={() => removeWatcherFolder(i)}>×</button
+                      >
                     </div>
                   {/each}
-                  
+
                   {#if watcherFolders.length < 5}
-                    <button class="add-slot-btn" 
-                      style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;" 
-                      onclick={addWatcherFolder}>
+                    <button
+                      class="add-slot-btn"
+                      style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
+                      onclick={addWatcherFolder}
+                    >
                       + Click to Add Target Folder Slot
                     </button>
                   {/if}
@@ -412,106 +815,273 @@
             </div>
           </div>
         </section>
+      {:else if activeTab === "ledger"}
+        <section class="tool-view">
+          <h2>Ledger Logs</h2>
+          <p class="subtitle">Historical audit logs from RAA_Vault</p>
+          <div class="ledger-container" style="background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 20px; height: 400px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 11px; color: #ccc;">
+            {#if ledgerContent}
+              <pre>{ledgerContent}</pre>
+            {:else}
+              <p style="color: #666; font-style: italic;">Loading ledger content or no logs available...</p>
+            {/if}
+          </div>
+        </section>
       {/if}
 
-      <!-- THE GLASS VAULT OVERLAY -->
       {#if currentReport.verdict}
-        <div class="glass-vault">
-          <div class="vault-header" class:error={currentReport.is_error}>
-            <span class="v-badge">{currentReport.is_error ? '🚨 RAA VIOLATION' : '🛡️ CERTIFIED'}</span>
-            <span class="v-target">TARGET: {currentReport.target_name}</span>
-          </div>
-          
-          <div class="vault-body">
-            <pre class="raw-forensics">{@html highlightSegment(currentReport.reasoning)}</pre>
-          </div>
-
-          <button class="vault-close" onclick={resetResults}>X CLOSE VAULT</button>
+      <div class="glass-vault">
+        <div class="vault-header" class:error={currentReport.is_error}>
+          <span class="v-badge"
+            >{currentReport.is_error
+              ? "🚨 RAA VIOLATION"
+              : "🛡️ CERTIFIED"}</span
+          >
+          <span class="v-target">TARGET: {currentReport.target_name}</span>
         </div>
-      {/if}
+
+        <div class="vault-body">
+          <pre class="raw-forensics">{@html highlightSegment(
+              currentReport.reasoning,
+            )}</pre>
+        </div>
+
+        <button class="vault-close" onclick={resetResults}
+          >X CLOSE VAULT</button
+        >
+      </div>
+    {/if}
+
 
       {#if certMsg}
         <div class="forensic-status-overlay">
           <div class="mission-success-toast">
             <span>{certMsg}</span>
-            <button class="toast-close" onclick={() => certMsg = ""}>×</button>
+            <button class="toast-close" onclick={() => (certMsg = "")}>×</button
+            >
           </div>
         </div>
       {/if}
     </div>
 
-    <!-- PHASE 4: WATCHER TOAST (ANNOUNCER ONLY) -->
     {#if showWatcherAlert}
-    <div class="watcher-toast">
-      <span class="toast-icon">🕵️</span>
-      <div class="toast-body">
-        <div class="toast-title">DNA Change Detected</div>
-        <div class="toast-path">{lastWatchedFile.split('/').pop()}</div>
+      <div class="watcher-toast">
+        <span class="toast-icon">🕵️</span>
+        <div class="toast-body">
+          <div class="toast-title">DNA Change Detected</div>
+          <div class="toast-path">{lastWatchedFile.split("/").pop()}</div>
+        </div>
       </div>
-      <!-- AUDIT BUTTON REMOVED: USE THE HUB INSTEAD -->
-    </div>
-  {/if}
+    {/if}
 
+    {#if showHistoryList && watcherHistory.length > 0}
+      <div class="alert-dropdown shadow-vault">
+        <div class="dropdown-header">
+          <h4>DNA Forensic Queue</h4>
+          <button class="close-x" onclick={() => (showHistoryList = false)}
+            >×</button
+          >
+        </div>
 
-  <!-- PHASE 4: FORENSIC QUEUE DROPDOWN -->
-  {#if showHistoryList && watcherHistory.length > 0}
-    <div class="alert-dropdown shadow-vault">
-      <div class="dropdown-header">
-        <h4>DNA Forensic Queue</h4>
-        <button class="close-x" onclick={() => showHistoryList = false}>×</button>
+        <div class="alert-list">
+          {#each watcherHistory as file}
+            <div class="alert-item">
+              <span class="file-name">{file.split("/").pop()}</span>
+              <button
+                class="audit-link"
+                onclick={() => startAuditFromQueue(file)}>Audit</button
+              >
+            </div>
+          {/each}
+        </div>
+
+        <button class="clear-btn" onclick={() => (watcherHistory = [])}
+          >Clear All Alerts</button
+        >
       </div>
-      
-      <div class="alert-list">
-        {#each watcherHistory as file}
-          <div class="alert-item">
-            <span class="file-name">{file.split('/').pop()}</span>
-            <button class="audit-link" onclick={() => startAuditFromQueue(file)}>Audit</button>
-          </div>
-        {/each}
-      </div>
-      
-      <button class="clear-btn" onclick={() => watcherHistory = []}>Clear All Alerts</button>
-    </div>
-  {/if}
-
-
+    {/if}
   </main>
-
 
   <footer class="app-footer">
     <div class="footer-stats">
-      <span class="stat-item">LLM: <span class="brand-text">{modelName || 'None'}</span></span>
+      <span class="stat-item"
+        >LLM: <span class="brand-text">{modelName || "None"}</span></span
+      >
       <span class="stat-divider">|</span>
-      <span class="stat-item">Status: <span class={isConfigured ? 'text-success' : 'text-danger'}>{isConfigured ? 'Armed' : 'Standby'}</span></span>
+      <span class="stat-item"
+        >Status: <span class={isConfigured ? "text-success" : "text-danger"}
+          >{isConfigured ? "Armed" : "Standby"}</span
+        ></span
+      >
     </div>
   </footer>
 </div>
 
 <style>
-  :root { font-family: 'Inter', sans-serif; --primary: #396cd8; --bg: #0a0a0a; --nav: #161616; --border: #262626; }
-  .app-layout { display: flex; flex-direction: column; height: 100vh; background: var(--bg); color: #f4f4f4; overflow: hidden; }
-  .top-bar { display: flex; justify-content: space-between; align-items: center; padding: 15px 30px; background: #000; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .logo-btn { background: none; border: none; color: var(--primary); font-weight: 900; font-size: 14px; letter-spacing: 2px; cursor: pointer; text-align: left; }
-  .nav-bar { display: flex; gap: 8px; padding: 8px 25px; background: var(--nav); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .nav-bar button { background: transparent; border: none; color: #888; padding: 8px 16px; font-size: 12px; cursor: pointer; }
-  .nav-bar button.active { color: var(--primary); background: #222; border-radius: 4px; }
-  .dev-tab { border: 1px solid #333 !important; color: #ffab00 !important; }
-  .progress-line { height: 2px; width: 100%; position: relative; overflow: hidden; background: #222; flex-shrink: 0; }
-  .progress-line::after { content: ''; position: absolute; left: -50%; height: 100%; width: 50%; background: var(--primary); animation: slide 1.5s infinite; }
-  @keyframes slide { from { left: -50%; } to { left: 100%; } }
-  .content-pane { flex: 1; padding: 40px; overflow-y: auto; position: relative; }
-  .view-wrapper { max-width: 1000px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; min-height: 100%; padding-bottom: 150px; }
-  .welcome-card { background: #161616; padding: 30px; border-radius: 12px; border: 1px solid var(--border); margin-top: 20px; text-align: left; }
-  .tool-box { display: flex; gap: 10px; margin-top: 20px; }
-  .tool-box input { flex: 1; background: #1a1a1a; border: 1px solid #333; color: #fff; padding: 12px; border-radius: 6px; font-family: monospace; }
-  .primary-btn { background: var(--primary); color: #fff; border: none; padding: 12px 24px; font-weight: 700; border-radius: 6px; cursor: pointer; }
-  .dual-pane-monitor { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; height: 300px; }
-  .pane { background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; overflow: hidden; text-align: left; }
-  h4 { font-size: 10px; color: #555; text-transform: uppercase; margin-bottom: 10px; }
-  .scroll-list { overflow-y: auto; flex: 1; font-family: monospace; font-size: 11px; }
-  .file-entry { padding: 4px 0; border-bottom: 1px solid #222; }
+  :root {
+    font-family: "Inter", sans-serif;
+    --primary: #396cd8;
+    --bg: #0a0a0a;
+    --nav: #161616;
+    --border: #262626;
+  }
+  .app-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: var(--bg);
+    color: #f4f4f4;
+    overflow: hidden;
+  }
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 30px;
+    background: #000;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .logo-btn {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-weight: 900;
+    font-size: 14px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .nav-bar {
+    display: flex;
+    gap: 8px;
+    padding: 8px 25px;
+    background: var(--nav);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .nav-bar button {
+    background: transparent;
+    border: none;
+    color: #888;
+    padding: 8px 16px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .nav-bar button.active {
+    color: var(--primary);
+    background: #222;
+    border-radius: 4px;
+  }
+  .dev-tab {
+    border: 1px solid #333 !important;
+    color: #ffab00 !important;
+  }
+  .progress-line {
+    height: 2px;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    background: #222;
+    flex-shrink: 0;
+  }
+  .progress-line::after {
+    content: "";
+    position: absolute;
+    left: -50%;
+    height: 100%;
+    width: 50%;
+    background: var(--primary);
+    animation: slide 1.5s infinite;
+  }
+  @keyframes slide {
+    from {
+      left: -50%;
+    }
+    to {
+      left: 100%;
+    }
+  }
+  .content-pane {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+    position: relative;
+  }
+  .view-wrapper {
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding-bottom: 150px;
+  }
+  .welcome-card {
+    background: #161616;
+    padding: 30px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    margin-top: 20px;
+    text-align: left;
+  }
+  .tool-box {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .tool-box input {
+    flex: 1;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    color: #fff;
+    padding: 12px;
+    border-radius: 6px;
+    font-family: monospace;
+  }
+  .primary-btn {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 12px 24px;
+    font-weight: 700;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .dual-pane-monitor {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+    height: 300px;
+  }
+  .pane {
+    background: #161616;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    text-align: left;
+  }
+  h4 {
+    font-size: 10px;
+    color: #555;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .scroll-list {
+    overflow-y: auto;
+    flex: 1;
+    font-family: monospace;
+    font-size: 11px;
+  }
+  .file-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid #222;
+  }
 
-  /* --- ACTIVE: THE GLASS VAULT OVERLAY --- */
   .glass-vault {
     position: fixed;
     top: 50%;
@@ -537,9 +1107,17 @@
     align-items: center;
     font-family: monospace;
   }
-  .vault-header.error { border-bottom: 2px solid #ef4444; }
-  .v-badge { color: #396cd8; font-weight: bold; }
-  .v-target { opacity: 0.6; font-size: 12px; }
+  .vault-header.error {
+    border-bottom: 2px solid #ef4444;
+  }
+  .v-badge {
+    color: #396cd8;
+    font-weight: bold;
+  }
+  .v-target {
+    opacity: 0.6;
+    font-size: 12px;
+  }
   .vault-body {
     flex: 1;
     overflow-y: auto;
@@ -548,12 +1126,12 @@
     text-align: left;
   }
   .raw-forensics {
-    color: #ffffff !important; /* FORCED BRIGHT WHITE */
+    color: #ffffff !important;
     white-space: pre-wrap;
     font-size: 14px;
     line-height: 1.7;
     margin: 0;
-    font-family: 'Courier New', monospace;
+    font-family: "Courier New", monospace;
   }
   .vault-close {
     background: #111;
@@ -565,37 +1143,150 @@
     text-transform: uppercase;
     letter-spacing: 1px;
   }
-  .vault-close:hover { color: #fff; background: #222; }
+  .vault-close:hover {
+    color: #fff;
+    background: #222;
+  }
 
-  /* --- VAULTED: LEGACY STYLES (Preserved via :global) --- */
-  .forensic-status-overlay { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); width: 100%; max-width: 800px; z-index: 1000; pointer-events: none; }
-  :global(.report-card), .mission-success-toast { pointer-events: auto; background: #1a1a1a; border: 1px solid var(--border); border-radius: 12px; text-align: left; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-  :global(.report-card.error) { border-left: 4px solid #ef4444; }
-  :global(.badge) { background: #333; color: #fff; padding: 8px 16px; font-size: 10px; font-weight: 800; display: flex; align-items: center; }
-  :global(.target-label) { margin-left: 10px; opacity: 0.7; font-weight: 400; text-transform: none; }
-  :global(.reasoning-container) { max-height: 450px; overflow-y: auto; padding: 10px; }
-  :global(.segment-card) { background: #111; margin-bottom: 10px; padding: 15px; border-radius: 6px; border-left: 3px solid #10b981; }
-  :global(.segment-card.segment-error) { border-left-color: #ef4444; }
-  :global(.segment-content) { white-space: pre-wrap; font-size: 12px; color: #ccc; margin: 0; line-height: 1.5; font-family: monospace; }
-  :global(.clear-btn) { background: transparent; border: 1px solid #333; color: #666; padding: 8px 16px; margin: 0 20px 20px; border-radius: 4px; cursor: pointer; }
+  .forensic-status-overlay {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 800px;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  :global(.report-card),
+  .mission-success-toast {
+    pointer-events: auto;
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    text-align: left;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+  }
+  :global(.report-card.error) {
+    border-left: 4px solid #ef4444;
+  }
+  :global(.badge) {
+    background: #333;
+    color: #fff;
+    padding: 8px 16px;
+    font-size: 10px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+  }
+  :global(.target-label) {
+    margin-left: 10px;
+    opacity: 0.7;
+    font-weight: 400;
+    text-transform: none;
+  }
+  :global(.reasoning-container) {
+    max-height: 450px;
+    overflow-y: auto;
+    padding: 10px;
+  }
+  :global(.segment-card) {
+    background: #111;
+    margin-bottom: 10px;
+    padding: 15px;
+    border-radius: 6px;
+    border-left: 3px solid #10b981;
+  }
+  :global(.segment-card.segment-error) {
+    border-left-color: #ef4444;
+  }
+  :global(.segment-content) {
+    white-space: pre-wrap;
+    font-size: 12px;
+    color: #ccc;
+    margin: 0;
+    line-height: 1.5;
+    font-family: monospace;
+  }
+  :global(.clear-btn) {
+    background: transparent;
+    border: 1px solid #333;
+    color: #666;
+    padding: 8px 16px;
+    margin: 0 20px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 
-  /* --- UTILITIES --- */
-  .mission-success-toast { background: #000; border: 1px solid var(--primary); color: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; }
-  .integrity-grid { display: grid; gap: 15px; }
-  .check-item { display: flex; justify-content: space-between; border-bottom: 1px solid #222; padding-bottom: 10px; }
-  .app-footer { padding: 12px 30px; background: #000; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; font-size: 10px; color: #444; flex-shrink: 0; }
-  .footer-stats { display: flex; align-items: center; gap: 15px; }
-  .stat-divider { opacity: 0.2; }
-  .brand-text { color: var(--primary); font-weight: bold; }
-  .terminal-input { text-transform: none !important; font-family: monospace; }
-  .version-tag { font-size: 10px; opacity: 0.4; }
-  .muted { opacity: 0.4; }
-  .subtitle { font-size: 14px; opacity: 0.6; }
+  .mission-success-toast {
+    background: #000;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    padding: 15px 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .integrity-grid {
+    display: grid;
+    gap: 15px;
+  }
+  .check-item {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #222;
+    padding-bottom: 10px;
+  }
+  .app-footer {
+    padding: 12px 30px;
+    background: #000;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    font-size: 10px;
+    color: #444;
+    flex-shrink: 0;
+  }
+  .footer-stats {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+  .stat-divider {
+    opacity: 0.2;
+  }
+  .brand-text {
+    color: var(--primary);
+    font-weight: bold;
+  }
+  .terminal-input {
+    text-transform: none !important;
+    font-family: monospace;
+  }
+  .version-tag {
+    font-size: 10px;
+    opacity: 0.4;
+  }
+  .muted {
+    opacity: 0.4;
+  }
+  .subtitle {
+    font-size: 14px;
+    opacity: 0.6;
+  }
 
-  /* --- INJECTED COLORS --- */
-  :global(.path-text) { color: #396cd8; font-weight: bold; }
-  :global(.text-success) { color: #10b981 !important; font-weight: bold; }
-  :global(.text-danger) { color: #ef4444 !important; font-weight: bold; }
+  :global(.path-text) {
+    color: #396cd8;
+    font-weight: bold;
+  }
+  :global(.text-success) {
+    color: #10b981 !important;
+    font-weight: bold;
+  }
+  :global(.text-danger) {
+    color: #ef4444 !important;
+    font-weight: bold;
+  }
 
   .filter-logic-zone {
     margin-top: 30px;
@@ -656,13 +1347,25 @@
     box-shadow: 0 0 20px rgba(57, 108, 216, 0.4);
     animation: slide-in 0.3s ease-out;
   }
-  .toast-icon { font-size: 24px; }
-  .toast-title { font-size: 11px; font-weight: bold; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
-  .toast-path { font-size: 13px; color: #fff; margin-top: 2px; }
+  .toast-icon {
+    font-size: 24px;
+  }
+  .toast-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .toast-path {
+    font-size: 13px;
+    color: #fff;
+    margin-top: 2px;
+  }
 
   .alert-hub-btn {
     position: relative;
-    margin-left: auto; /* Pushes the icon to the far right */
+    margin-left: auto;
     background: none;
     border: none;
     cursor: pointer;
@@ -674,7 +1377,7 @@
     position: absolute;
     top: -2px;
     right: -2px;
-    background: #ef4444; /* High-alert red */
+    background: #ef4444;
     color: white;
     font-size: 9px;
     font-weight: bold;
@@ -682,7 +1385,7 @@
     border-radius: 10px;
     line-height: 1;
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-    pointer-events: none; /* Clicking the badge clicks the button */
+    pointer-events: none;
   }
 
   .alert-dropdown {
@@ -695,12 +1398,32 @@
     border-radius: 8px;
     padding: 15px;
     z-index: 10000;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.9);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
   }
-  .dropdown-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .dropdown-header h4 { margin: 0; font-size: 11px; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
-  .close-x { background: none; border: none; color: #444; cursor: pointer; font-size: 18px; }
-  .alert-list { max-height: 300px; overflow-y: auto; }
+  .dropdown-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .dropdown-header h4 {
+    margin: 0;
+    font-size: 11px;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .close-x {
+    background: none;
+    border: none;
+    color: #444;
+    cursor: pointer;
+    font-size: 18px;
+  }
+  .alert-list {
+    max-height: 300px;
+    overflow-y: auto;
+  }
   .alert-item {
     display: flex;
     justify-content: space-between;
@@ -708,7 +1431,14 @@
     padding: 10px 0;
     border-bottom: 1px solid #111;
   }
-  .file-name { font-size: 11px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
+  .file-name {
+    font-size: 11px;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 190px;
+  }
   .audit-link {
     background: var(--primary);
     border: none;
@@ -730,7 +1460,16 @@
     cursor: pointer;
     border-radius: 4px;
   }
-  .clear-btn:hover { color: #ef4444; border-color: #ef4444; }
-
-
+  .clear-btn:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+  }
+  .subtitle {
+    font-size: 14px;
+    opacity: 0.6;
+    position: relative;
+    display: inline-block;
+  }
 </style>
+
+// End of File
