@@ -4,6 +4,18 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
+  let roadmapContent = $state("");
+  let activeTab = $state("welcome"); // Ensure this is defined if not already (it is in your code)
+
+  async function loadRoadmap() {
+    activeTab = "roadmap";
+    try {
+    roadmapContent = await invoke("read_roadmap");
+    } catch (err) {
+    roadmapContent = `Error loading roadmap: ${String(err)}`;
+    }
+  }
+
   let startTime = $state(0);
   let handoffTime = $state(0); // This is your "Lap"
   let totalTime = $state(0);
@@ -126,7 +138,6 @@
     }
   }
 
-  let activeTab = $state("welcome");
   let isProcessing = $state(false);
   let currentReport = $state({
     verdict: "",
@@ -503,6 +514,14 @@
         <span class="alert-badge">{watcherHistory.length}</span>
       {/if}
     </button>
+    <!-- Add this button right after the alert-hub-btn button in the nav-bar -->
+    <button
+      class="roadmap-btn"
+      onclick={loadRoadmap}
+      class:active={activeTab === "roadmap"}
+    >
+      📋 Roadmap
+    </button>
   </nav>
 
   {#if isProcessing}<div class="progress-line"></div>{/if}
@@ -815,7 +834,7 @@
             </div>
           </div>
         </section>
-      {:else if activeTab === "ledger"}
+        {:else if activeTab === "ledger"}
         <section class="tool-view">
           <h2>Ledger Logs</h2>
           <p class="subtitle">Historical audit logs from RAA_Vault</p>
@@ -827,32 +846,43 @@
             {/if}
           </div>
         </section>
+      {:else if activeTab === "roadmap"}
+        <section class="tool-view">
+          <h2>Roadmap Progress</h2>
+          <p class="subtitle">Temporary view of ROADMAP.md content</p>
+          <div class="roadmap-container" style="background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 20px; height: 400px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 11px; color: #ccc;">
+            {#if roadmapContent}
+              <pre>{roadmapContent}</pre>
+            {:else}
+              <p style="color: #666; font-style: italic;">Loading roadmap content...</p>
+            {/if}
+          </div>
+        </section>
       {/if}
-
+      
       {#if currentReport.verdict}
-      <div class="glass-vault">
-        <div class="vault-header" class:error={currentReport.is_error}>
-          <span class="v-badge"
-            >{currentReport.is_error
-              ? "🚨 RAA VIOLATION"
-              : "🛡️ CERTIFIED"}</span
+        <div class="glass-vault">
+          <div class="vault-header" class:error={currentReport.is_error}>
+            <span class="v-badge"
+              >{currentReport.is_error
+                ? "🚨 RAA VIOLATION"
+                : "🛡️ CERTIFIED"}</span
+            >
+            <span class="v-target">TARGET: {currentReport.target_name}</span>
+          </div>
+      
+          <div class="vault-body">
+            <pre class="raw-forensics">{@html highlightSegment(
+                currentReport.reasoning,
+              )}</pre>
+          </div>
+      
+          <button class="vault-close" onclick={resetResults}
+            >X CLOSE VAULT</button
           >
-          <span class="v-target">TARGET: {currentReport.target_name}</span>
         </div>
-
-        <div class="vault-body">
-          <pre class="raw-forensics">{@html highlightSegment(
-              currentReport.reasoning,
-            )}</pre>
-        </div>
-
-        <button class="vault-close" onclick={resetResults}
-          >X CLOSE VAULT</button
-        >
-      </div>
-    {/if}
-
-
+      {/if}
+      
       {#if certMsg}
         <div class="forensic-status-overlay">
           <div class="mission-success-toast">
@@ -862,44 +892,44 @@
           </div>
         </div>
       {/if}
-    </div>
-
-    {#if showWatcherAlert}
-      <div class="watcher-toast">
-        <span class="toast-icon">🕵️</span>
-        <div class="toast-body">
-          <div class="toast-title">DNA Change Detected</div>
-          <div class="toast-path">{lastWatchedFile.split("/").pop()}</div>
-        </div>
       </div>
-    {/if}
-
-    {#if showHistoryList && watcherHistory.length > 0}
-      <div class="alert-dropdown shadow-vault">
-        <div class="dropdown-header">
-          <h4>DNA Forensic Queue</h4>
-          <button class="close-x" onclick={() => (showHistoryList = false)}
-            >×</button
+      
+      {#if showWatcherAlert}
+        <div class="watcher-toast">
+          <span class="toast-icon">🕵️</span>
+          <div class="toast-body">
+            <div class="toast-title">DNA Change Detected</div>
+            <div class="toast-path">{lastWatchedFile.split("/").pop()}</div>
+          </div>
+        </div>
+      {/if}
+      
+      {#if showHistoryList && watcherHistory.length > 0}
+        <div class="alert-dropdown shadow-vault">
+          <div class="dropdown-header">
+            <h4>DNA Forensic Queue</h4>
+            <button class="close-x" onclick={() => (showHistoryList = false)}
+              >×</button
+            >
+          </div>
+      
+          <div class="alert-list">
+            {#each watcherHistory as file}
+              <div class="alert-item">
+                <span class="file-name">{file.split("/").pop()}</span>
+                <button
+                  class="audit-link"
+                  onclick={() => startAuditFromQueue(file)}>Audit</button
+                >
+              </div>
+            {/each}
+          </div>
+      
+          <button class="clear-btn" onclick={() => (watcherHistory = [])}
+            >Clear All Alerts</button
           >
         </div>
-
-        <div class="alert-list">
-          {#each watcherHistory as file}
-            <div class="alert-item">
-              <span class="file-name">{file.split("/").pop()}</span>
-              <button
-                class="audit-link"
-                onclick={() => startAuditFromQueue(file)}>Audit</button
-              >
-            </div>
-          {/each}
-        </div>
-
-        <button class="clear-btn" onclick={() => (watcherHistory = [])}
-          >Clear All Alerts</button
-        >
-      </div>
-    {/if}
+      {/if}
   </main>
 
   <footer class="app-footer">
@@ -1469,6 +1499,21 @@
     opacity: 0.6;
     position: relative;
     display: inline-block;
+  }
+  .roadmap-btn {
+  position: relative;
+  margin-left: 10px;
+  background: transparent;
+  border: none;
+  color: #888;
+  padding: 8px 16px;
+  font-size: 12px;
+  cursor: pointer;
+  }
+  .roadmap-btn.active {
+    color: var(--primary);
+    background: #222;
+    border-radius: 4px;
   }
 </style>
 

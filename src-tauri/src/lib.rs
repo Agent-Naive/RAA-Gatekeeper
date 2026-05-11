@@ -547,6 +547,15 @@ async fn toggle_watcher(
     Ok(())
 }
 
+#[tauri::command]
+async fn read_roadmap() -> String {
+    let roadmap_path = "/Users/agent-naive/dev/RAA-Gatekeeper/ROADMAP.md";
+    match std::fs::read_to_string(roadmap_path) {
+        Ok(content) => content,
+        Err(e) => format!("Failed to read ROADMAP.md: {}", e),
+    }
+}
+
 pub fn run() {
     dotenvy::dotenv().ok();
     tauri::Builder::default()
@@ -560,7 +569,8 @@ pub fn run() {
             scan_compressed_archive,
             read_ledger,
             check_integrity,
-            toggle_watcher
+            toggle_watcher,
+            read_roadmap
         ])
         .run(tauri::generate_context!())
         .expect("error");
