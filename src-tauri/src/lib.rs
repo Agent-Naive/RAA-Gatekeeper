@@ -62,6 +62,14 @@ fn get_content_hash(content: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+#[tauri::command]
+async fn hash_file(path: String) -> Result<String, String> {
+    let content = fs::read(&path).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    hasher.update(&content);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport> {
     if let Ok(file) = fs::File::open(manifest_path) {
         let reader = BufReader::new(file);
@@ -331,7 +339,7 @@ async fn scan_compressed_archive(
 ) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
-    let mut internal_entries = Vec::new();
+    let mut file_analyses = Vec::new();
     let mut violation_found = false;
 
     for i in 0..archive.len() {
@@ -354,21 +362,36 @@ async fn scan_compressed_archive(
                 let bytes_read = zf.read(&mut buffer).map_err(|e| e.to_string())?;
                 let content = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
                 let hash = get_content_hash(&content);
+
                 let report =
                     call_llm_auditor(&content, "archive internal", &base_url, &model_name, &name)
                         .await?;
+
                 if report.is_error {
                     violation_found = true;
                 }
-                internal_entries.push(format!(
-                    "File: {} | Hash: {} | Result: {}",
-                    name, hash, report.verdict
-                ));
+
+                // Rich per-file block: preserves DNA line + stores the full oracle response
+                let analysis_block = format!(
+                    "--- RAA FILE ANALYSIS ---\n\
+                     File: {} | Hash: {}\n\
+                     Verdict: {}\n\
+                     Analysis:\n{}\n\
+                     ------------------------\n",
+                    name,
+                    hash,
+                    report.verdict,
+                    report.reasoning.trim()
+                );
+
+                file_analyses.push(analysis_block);
             }
         }
     }
-    let final_text = internal_entries.join("\n");
+
+    let final_text = file_analyses.join("\n");
     log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text, &vault_root_path);
+
     Ok(RAAReport {
         verdict: if violation_found {
             "VIOLATION FOUND".into()
@@ -659,7 +682,8 @@ pub fn run() {
             toggle_watcher,
             create_vault_directory,
             list_ledger_files,
-            read_single_ledger_file
+            read_single_ledger_file,
+            hash_file
         ])
         .run(tauri::generate_context!())
         .expect("error");
