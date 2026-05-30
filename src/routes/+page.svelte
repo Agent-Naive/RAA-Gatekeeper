@@ -1151,7 +1151,7 @@
                 {#if selectedLedgerContent}
                   {#each getReportSegments(selectedLedgerContent) as segment}
                     <div class="ledger-incident-card">
-                      <pre class="raw-forensics raw-forensics-no-margin">{@html highlightSegment(segment)}</pre>
+                      <pre class="raw-forensics raw-forensics-no-margin">{segment}</pre>
                     </div>
                   {/each}
 
@@ -1247,9 +1247,7 @@
           </div>
       
           <div class="vault-body">
-            <pre class="raw-forensics">{@html highlightSegment(
-                currentReport.reasoning,
-              )}</pre>
+            <pre class="raw-forensics">{currentReport.reasoning}</pre>
           </div>
       
           <button class="vault-close" onclick={resetResults}
