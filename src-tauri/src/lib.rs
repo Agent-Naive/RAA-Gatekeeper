@@ -532,19 +532,38 @@ async fn generate_manifest(
                 job.content
             ));
         } else {
-            // Multiple files — ask the model to analyze them individually when possible
-            batch_text.push_str(
-                "You are analyzing multiple files together for security and malicious behavior. \
-                 For each file, provide a clear individual assessment when possible.\n\n"
-            );
-            for job in &bucket {
+            // Multiple files in one bucket — instruct the model to audit them sequentially and independently
+            let file_count = bucket.len();
+            batch_text.push_str(&format!(
+                "You have received a batch containing exactly {} separate files.\n\n\
+                 IMPORTANT INSTRUCTIONS:\n\
+                 - You must analyze these files ONE AT A TIME, completely independently.\n\
+                 - Start with the first file only. Perform a full, thorough security audit on ONLY that file.\n\
+                 - When you finish the current file, clearly mark the end of its analysis.\n\
+                 - Then move to the next file and repeat the process from a completely fresh perspective.\n\
+                 - Do NOT let any information, findings, or context from previous files influence your analysis of the current file.\n\
+                 - Treat each file as if it is the only file you are auditing.\n\
+                 - Continue this process until you have analyzed all {} files in this batch.\n\n\
+                 Here are the files in order:\n\n",
+                file_count, file_count
+            ));
+
+            for (i, job) in bucket.iter().enumerate() {
                 batch_text.push_str(&format!(
-                    "FILE: {} | HASH: {}\n{}\n\n",
+                    "=== FILE {} ===\n\
+                     FILE: {}\n\
+                     HASH: {}\n\n\
+                     CONTENT:\n{}\n\n",
+                    i + 1,
                     job.path.display(),
                     job.hash,
                     job.content
                 ));
             }
+
+            batch_text.push_str(
+                "Now begin your analysis with FILE 1 and proceed sequentially through all files as instructed above."
+            );
         }
 
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
