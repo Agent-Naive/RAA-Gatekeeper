@@ -599,7 +599,9 @@ async fn generate_manifest(
         // Try to parse structured JSON output from the model
         #[derive(serde::Deserialize)]
         struct FileAnalysis {
-            file: String,
+            // Field is present for JSON deserialization and potential future validation
+            // (e.g. verifying the model returned the correct filename).
+            _file: String,
             verdict: String,
             analysis: String,
         }
