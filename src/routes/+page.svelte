@@ -1013,7 +1013,7 @@
             <p class="subtitle ledger-count">{ledgerFiles.length} reports in vault</p>
           </div>
 
-          <div class="flex gap-12 mt-10">
+          <div class="flex gap-8 mt-10">
             <!-- File List -->
             <div class="ledger-panel ledger-panel-fixed">
               <div class="ledger-header">
@@ -1039,7 +1039,7 @@
                       role="button"
                       tabindex="0"
                     >
-                      <div class="flex justify-between items-center gap-8">
+                      <div class="flex justify-between items-center gap-4">
                         <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
                           {file.has_violation ? "🚨" : "🛡️"}
                         </span>

@@ -578,7 +578,7 @@
   background: transparent;
   border: none;
   border-bottom: 1px solid #1f1f1f;
-  padding: 8px 10px;
+  padding: 6px 8px;
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -614,12 +614,16 @@
   color: #ddd;
   padding: 6px 8px;
   border-radius: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(100% - 4px); /* prevents edge clipping against panel border */
 }
 
 .ledger-header {
-  padding: 8px 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid #222;
   background: #1a1a1a;
+  box-sizing: border-box;
 }
 
 .ledger-detail {
@@ -627,6 +631,9 @@
   min-height: 420px;
   overflow-y: auto;
   font-size: 12px;
+  flex: 1;
+  min-width: 480px;
+  max-width: 620px;
 }
 
 .ledger-empty {
@@ -652,6 +659,7 @@
 
 .ledger-item-name {
   flex: 1;
+  min-width: 0; /* critical for text-ellipsis inside flex */
   text-align: left;
   font-size: 11px;
   font-family: monospace;
@@ -661,7 +669,7 @@
 .ledger-item-date {
   font-size: 10px;
   color: #666;
-  text-align: right;
+  text-align: left;
   margin-top: 2px;
 }
 
@@ -706,6 +714,7 @@
 
 .ledger-item-name {
   color: #ddd;
+  min-width: 0;
 }
 
 /* Final utilities for the last inline styles */
@@ -720,7 +729,8 @@
 }
 
 .ledger-panel-fixed {
-  flex: 0 0 320px;
+  flex: 0 0 520px;
+  overflow-x: hidden;
 }
 
 .raw-forensics-no-margin {
@@ -743,6 +753,7 @@
 .ledger-list-container {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   max-height: 420px;
 }
 
@@ -842,8 +853,8 @@
   background: transparent;
   border: none;
   color: #666;
-  font-size: 13px;
-  padding: 2px 6px;
+  font-size: 12px;
+  padding: 1px 4px;
   border-radius: 3px;
   cursor: pointer;
   opacity: 0.6;
