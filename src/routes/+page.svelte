@@ -834,7 +834,7 @@
       {:else if activeTab === "integrity"}
         <section class="tool-view">
           <h2>Integrity Guard</h2>
-          <div class="welcome-card">
+          <div class="integrity-container">
             {#if integrityReport}
               <div class="integrity-grid">
                 <div class="check-item">

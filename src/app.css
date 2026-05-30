@@ -954,3 +954,41 @@
 .delete-btn.confirm:hover {
   background: #5c1111;
 }
+
+/* =========================================
+   Integrity Guard - Restored nice layout
+   ========================================= */
+.integrity-container {
+  background: #161616;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-top: 16px;
+}
+
+.integrity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.check-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 14px 18px;
+  font-size: 13px;
+}
+
+.check-item span:first-child {
+  color: #ddd;
+}
+
+.check-item .check {
+  font-size: 20px;
+  line-height: 1;
+  margin-left: 12px;
+}
