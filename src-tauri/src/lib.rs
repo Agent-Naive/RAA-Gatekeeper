@@ -532,55 +532,53 @@ async fn generate_manifest(
                 job.content
             ));
         } else {
-            // Multiple files in one bucket — instruct the model to audit them sequentially and independently
+            // Multiple files in one bucket — force the model to treat every file as a completely separate, independent audit
             let file_count = bucket.len();
+
             batch_text.push_str(&format!(
-                "You have received a batch containing exactly {} separate files.\n\n\
-                 IMPORTANT INSTRUCTIONS:\n\
-                 - You must analyze these files ONE AT A TIME, completely independently.\n\
-                 - Start with the first file only. Perform a full, thorough security audit on ONLY that file.\n\
-                 - When you finish the current file, clearly mark the end of its analysis.\n\
-                 - Then move to the next file and repeat the process from a completely fresh perspective.\n\
-                 - Do NOT let any information, findings, or context from previous files influence your analysis of the current file.\n\
-                 - Treat each file as if it is the only file you are auditing.\n\
-                 - Continue this process until you have analyzed all {} files in this batch.\n\n\
-                 Here are the files in order:\n\n",
+                "You have been given a batch containing exactly {} separate files to audit.\n\n\
+                 YOU MUST FOLLOW THIS EXACT PROCESS (treat it like a programming for-loop):\n\n\
+                 For i from 1 to {}:\n\
+                   - Focus ONLY on FILE i.\n\
+                   - Completely ignore every other file in this batch while analyzing FILE i.\n\
+                   - Perform a full, independent security audit of ONLY FILE i.\n\
+                   - Output the complete analysis and verdict for FILE i.\n\
+                   - Then mentally clear your context before moving to FILE i+1.\n\
+                   - Do not carry over any suspicions, context, or details from previous files.\n\n\
+                 This is not a single holistic review of the whole batch. Each file must receive its own standalone forensic analysis.\n\n\
+                 Files in this batch (in order):\n\n",
                 file_count, file_count
             ));
 
             for (i, job) in bucket.iter().enumerate() {
                 batch_text.push_str(&format!(
-                    "=== FILE {} ===\n\
-                     FILE: {}\n\
+                    "=== START OF FILE {} ===\n\
+                     FILE PATH: {}\n\
                      HASH: {}\n\n\
-                     CONTENT:\n{}\n\n",
+                     FILE CONTENT:\n{}\n\n\
+                     === END OF FILE {} ===\n\n",
                     i + 1,
                     job.path.display(),
                     job.hash,
-                    job.content
+                    job.content,
+                    i + 1
                 ));
             }
 
-            batch_text.push_str(
-                "Now begin your analysis with FILE 1 and proceed sequentially through all files as instructed above.\n\n"
-            );
-
-            // Force structured JSON output
             batch_text.push_str(&format!(
-                "OUTPUT FORMAT (MANDATORY - NO EXCEPTIONS):\n\
-                 You MUST respond with ONLY a single valid JSON array. Do not include any text, explanation, markdown, or anything before or after the JSON.\n\n\
-                 The JSON array must contain exactly {} objects (one per file), in the same order as the files above.\n\n\
-                 Each object must follow this exact schema:\n\
+                "Now execute the process described above.\n\n\
+                 REQUIRED OUTPUT FORMAT (YOU MUST FOLLOW EXACTLY):\n\
+                 Output ONLY a valid JSON array containing exactly {} objects.\n\
+                 Do not write any text, explanations, or markdown before or after the JSON.\n\n\
+                 JSON Schema (each object):\n\
                  {{\n\
-                   \"file\": \"exact file path from the list above\",\n\
+                   \"file_number\": {},\n\
+                   \"file_path\": \"exact path shown above\",\n\
                    \"verdict\": \"CERTIFIED\" or \"VIOLATION FOUND\",\n\
-                   \"analysis\": \"Your complete, detailed security analysis for ONLY this specific file. Be thorough.\"\n\
+                   \"analysis\": \"Your full, independent analysis and reasoning for ONLY this file.\"\n\
                  }}\n\n\
-                 Critical rules:\n\
-                 - Analyze each file completely independently. Do not let findings from one file affect another.\n\
-                 - The \"analysis\" field must contain your full reasoning for that file only.\n\
-                 - Output NOTHING except the raw JSON array."
-            , file_count));
+                 Begin with FILE 1 and process all files sequentially as instructed."
+            , file_count, file_count));
         }
 
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
