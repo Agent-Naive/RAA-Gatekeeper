@@ -284,11 +284,11 @@
         '<span class="path-text">$1</span>',
       )
       .replace(
-        /(SAFE|CERTIFIED|CLEAN|ALL SAFE)/g,
+        /(?<![A-Z])(SAFE|CERTIFIED|CLEAN|ALL SAFE)(?![A-Z])/g,
         '<span class="text-success">$1</span>',
       )
       .replace(
-        /(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)/g,
+        /(?<![A-Z])(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)(?![A-Z])/g,
         '<span class="text-danger">$1</span>',
       );
   }
