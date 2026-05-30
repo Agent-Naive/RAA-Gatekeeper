@@ -1,59 +1,80 @@
-# 🛡️ RAA Gatekeeper Roadmap (v0.3.0)
+# 🛡️ RAA Gatekeeper Roadmap
 
-# ⚓ PERMANENT ANCHORS (DO NOT ALTER)
-- **API Endpoint:** `.post("https://x.ai")` - (Hard-locked in `lib.rs`).
+**Current Status:** Active Development — Phase 3 + 4 Core Complete  
+**Last Major Update:** Vault propagation fixed + in-app roadmap viewer removed
+
+---
+
+## ⚓ PERMANENT ANCHORS (DO NOT ALTER)
+
+- **API Endpoint:** Uses dynamic Base URL (user-configurable). No hard-coded `x.ai`.
 - **Path Protocol:** Always use `fs::canonicalize` for absolute path matching in ledgers.
-- **Ledger Pathing:** Automated Routing to `~/dev/RAA-Gatekeeper/raa-*` test folders.
-- **UI Logic:** Mutually exclusive toggles for Ledger vs. Snapshot modes (Radio-style).
-- **UX Logic:** All interactive inputs must have explicit `type="text"` and `onsubmit` wrappers.
+- **Ledger Pathing:** Respects user-selected `vaultRootPath` (falls back to `~/Documents/RAA_Vault`).
+- **Read-Only Mandate:** The Gatekeeper never modifies user files.
+- **Advisory Only:** All verdicts are diagnostic. Human remains the decision maker.
 
 ---
 
-## 📂 Phase 1: Core Engine & UX Transparency - COMPLETE ✅
-- [x] **Audit Command Line:** Captured terminal safety fingerprints with Enter-key support.
-- [x] **Deep File Certification:** Integrated mathematical hashing with Grok-powered logic.
-- [x] **ZIP/Archive Peeking:** Enabled deep-scan capabilities without extraction.
-- [x] **High-Context Report Cards:** Implemented Emerald/Crimson glow-coding for triage.
-- [x] **Wide Theatre UI:** Re-architected navigation to horizontal tabs for visibility.
-- [x] **"Bring Your Own LLM":** Decoupled backend for dynamic URLs and Model Names.
-- [x] **Arm Protocol:** Added activation handshake and persistent onboarding screen.
-- [x] **Persistence:** Established LocalStorage sync so settings survive app restarts.
-- [x] **Terminal Cleanup:** Suppress Svelte `a11y` and Rust `unused` warnings.
+## ✅ Phase 1 + 2: Core Engine & Performance — COMPLETE
 
-## ⚡ Phase 2: Performance & Scaling - COMPLETE ✅
-- [x] **Parallel Collection:** Real-time dual-pane population (Skipped vs. Active).
-- [x] **Parallel Hashing:** (Rayon Integration) Fingerprinting across all CPU cores.
-- [x] **Bin-Packing/Batching:** Smart character-count buckets to slash API latency and costs.
-- [x] **macOS Junk Filter:** Surgical exclusion of `__MACOSX` and `._` metadata files.
-- [x] **Binary Safety:** Implemented string-read bypass to prevent binary file crashes.
-- [x] **Catch-47 ZIP DNA:** Restored hashing for files nested inside archives.
-- [x] **Mission Success Feedback:** High-visibility toast notifications for scan completion.
-- [x] **Alphabetized Audit Logic:** UI toggle chips for 14+ AI-stack file extensions.
-
-## 🔍 Phase 3: Forensic UI & Ledger Viewer - ACTIVE 🚧
-- [ ] **In-App Ledger Browser:** A dedicated tab to view and search `.raa` files directly.
-- [ ] **DNA Verification:** UI indicator to verify if current hashes match the last ledger entry.
-- [ ] **Violation "Wall of Shame":** Persistent dashboard of all historical threats found.
-- [ ] **Token Economy:** Live footer counter for batch density and estimated token savings.
-- [ ] **Export Reports:** Generate clean Markdown/PDF security summaries for project handoffs.
-- [ ] **Diff-Checker:** Visual code comparison tool for mismatched file hashes.
-
-## 🔐 Phase 4: Local Intelligence & Privacy
-- [ ] **Local LLM Integration:** One-click toggle for Ollama/LocalAI offline auditing.
-- [ ] **Quarantine Mode:** Auto-isolation of infected files to hidden `.raa-quarantine` folders.
-- [ ] **Private Key Signing:** Cryptographically sign manifests to prove "Authorized Auditor" status.
-
-## 🛠️ Phase 5: Auto-Fix & Remediation (v1.0.0-BETA)
-- [ ] **Security Patching:** AI-suggested "one-click fixes" for detected vulnerabilities (e.g., Tauri CSP).
-- [ ] **Environment Hardening:** Automated encryption for sensitive `.env` files.
-- [ ] **Dependency Auditor:** Deep-scan `package.json` against known CVE security databases.
+- [x] Terminal command auditing with Bible instant-recall (SHA-256 cache)
+- [x] Deep file integrity scanning (hash + LLM)
+- [x] Archive deep-peeking (ZIP contents audited without full extraction, 2MB safety valve)
+- [x] Parallel hashing with Rayon across all CPU cores
+- [x] Smart bin-packing / batching to reduce API calls
+- [x] macOS junk filter (`__MACOSX`, `._` files)
+- [x] Binary safety (string-read bypass)
+- [x] Real-time dual-pane collection UI (Active vs Skipped)
+- [x] High-visibility mission success toasts
+- [x] "Bring Your Own LLM" (fully dynamic Base URL + Model Name)
+- [x] Persistent settings via LocalStorage
+- [x] Performance telemetry (LOCAL handoff ms + ORACLE total time)
 
 ---
 
-## 📝 TODO / FUTURE UI REFACTOR
-- [ ] **Settings Layout Shift:** Move **Model Name** to a dropdown on the left.
-- [ ] **Base URL Expansion:** Move **Base URL** input to the right of the model dropdown and increase width by 50% to prevent character cutoff (e.g., `.../completions`).
+## ✅ Phase 3 + 4: Forensic UI & Silent Monitoring — CORE COMPLETE
 
-## 💡 Future Ideas / Brainstorming
-- [ ] Menu bar icon for "Silent Monitoring" of terminal commands.
-- [ ] Browser extension to audit code snippets on StackOverflow before copying.
+- [x] **Silent Watcher** — Kernel-level file monitoring with DNA change alerts
+- [x] **DNA Toast + Forensic Queue** — "Teleport to Analyze" from watcher events
+- [x] **Configurable Watcher** — Up to 5 folders, depth control (1-5), persisted
+- [x] **Ledger Tab** — Basic access to historical `.raa` files
+- [x] **Integrity Guard** — 7/7 self-check dashboard (parallel hashing, disk-first, etc.)
+- [x] **User-Selectable Vault** — Full `vaultRootPath` propagation to all audit types
+- [x] **Real-time Timers** — Handoff + total oracle timing on every operation
+- [x] **Disk-First Verification** — Reports pulled from SSD, not just memory
+
+### Currently In Progress / Next
+
+- [ ] **Rich Ledger Browser** — Proper file list, searchable, parsed incident cards, per-file DNA verification
+- [ ] **DNA Verification UI** — "Does current hash match last ledger entry?" indicator
+- [ ] **Export Reports** — Clean Markdown export of any audit or full manifest
+- [ ] **Violation History Dashboard** ("Wall of Shame")
+- [ ] **Token Economy Counter** — Live batch density + estimated savings
+
+---
+
+## 🔐 Phase 4+ (Future)
+
+- [ ] Local LLM support (Ollama / LocalAI toggle)
+- [ ] Quarantine mode for high-confidence violations
+- [ ] Cryptographic signing of manifests
+
+---
+
+## 🛠️ Phase 5 (v1.0 Vision)
+
+- [ ] AI-suggested auto-remediation for common issues
+- [ ] Dependency CVE scanning
+- [ ] Environment hardening helpers
+
+---
+
+## 📝 Known Polish Items
+
+- Settings layout: Model selector as dropdown + wider Base URL field
+- Remove duplicated vault-fallback blocks in UI
+- Make Integrity Guard reflect real vault path state instead of hardcoded true
+
+---
+
+*"Trust, then Certify."*

@@ -4,17 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount, tick } from "svelte";
 
-  let roadmapContent = $state("");
-  let activeTab = $state("welcome"); // Ensure this is defined if not already (it is in your code)
-
-  async function loadRoadmap() {
-    activeTab = "roadmap";
-    try {
-    roadmapContent = await invoke("read_roadmap");
-    } catch (err) {
-    roadmapContent = `Error loading roadmap: ${String(err)}`;
-    }
-  }
+  let activeTab = $state("welcome");
 
   let startTime = $state(0);
   let handoffTime = $state(0); // This is your "Lap"
@@ -120,6 +110,16 @@
   let baseUrl = $state(localStorage.getItem("raa_base_url") || "");
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
   let vaultRootPath = $state(localStorage.getItem("raa_vault_root_path") || "");
+
+  // Normalize any previously stored value that accidentally included /RAA_Vault
+  if (vaultRootPath.endsWith('/RAA_Vault') || vaultRootPath.endsWith('\\RAA_Vault')) {
+    vaultRootPath = vaultRootPath.replace(/[\\/]RAA_Vault\/?$/, '');
+  }
+
+  let displayVaultPath = $derived(
+    vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "~/Documents/RAA_Vault"
+  );
+
   let isConfigured = $derived(
     baseUrl.trim().length > 0 && modelName.trim().length > 0,
   );
@@ -128,13 +128,29 @@
   $effect(() => {
     localStorage.setItem("raa_base_url", baseUrl);
     localStorage.setItem("raa_model_name", modelName);
-    localStorage.setItem("raa_vault_root_path", vaultRootPath);
+
+    // Always persist a clean parent path (never with /RAA_Vault suffix)
+    const cleanRoot = (vaultRootPath || "").replace(/[\\/]RAA_Vault\/?$/, "");
+    localStorage.setItem("raa_vault_root_path", cleanRoot);
   });
 
   async function selectVaultRootPath() {
     const selected = await open({ directory: true, multiple: false });
     if (selected && !Array.isArray(selected)) {
       vaultRootPath = selected;
+    }
+  }
+
+  async function setDefaultVault() {
+    try {
+      // Explicitly ensure the true default location ~/Documents/RAA_Vault is created
+      await invoke("create_vault_directory", { rootPath: "" });
+      // Keep vaultRootPath empty to represent "using the built-in default"
+      vaultRootPath = "";
+      console.log("Default vault location activated: ~/Documents/RAA_Vault");
+    } catch (err) {
+      console.error("Failed to create default vault:", err);
+      vaultRootPath = "";
     }
   }
 
@@ -147,7 +163,12 @@
   });
   let certMsg = $state("");
   let commandInput = $state("");
-  let ledgerContent = $state("");
+  let ledgerContent = $state(""); // legacy raw view (kept for now)
+  let ledgerFiles = $state<any[]>([]);
+  let selectedLedgerPath = $state("");
+  let selectedLedgerContent = $state("");
+  let ledgerSearch = $state("");
+  let isLoadingLedger = $state(false);
   let integrityReport = $state<any>(null);
 
   let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
@@ -238,21 +259,25 @@
     watcherFolders = watcherFolders.filter((_, i) => i !== index);
   }
 
+  async function ensureVault() {
+    // Only ensure directory creation if the user has explicitly set a custom root.
+    // On first run (empty), leave vaultRootPath empty — the default ~/Documents/RAA_Vault
+    // will be used and created automatically inside the Rust logging functions.
+    if (vaultRootPath && vaultRootPath !== "~/Documents") {
+      try {
+        await invoke("create_vault_directory", { rootPath: vaultRootPath });
+      } catch (err) {
+        console.error("Failed to ensure custom vault directory:", err);
+      }
+    }
+  }
+
   async function handleAudit(e?: Event) {
     if (e) e.preventDefault();
     if (!commandInput.trim()) return;
     resetResults();
     
-    // Failsafe: If no vault path is set, default to Documents/RAA_Vault
-    if (!vaultRootPath) {
-      // Default to user's Documents folder (Note: This may require Tauri API for exact path)
-      vaultRootPath = "~/Documents";
-      console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
-      // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
-      await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
-        console.error("Failed to create RAA_Vault directory:", err);
-      });
-    }
+    await ensureVault();
     
     // 1. Mark the absolute start and start real-time timers
     startTimers();
@@ -295,16 +320,7 @@
   async function handleBrowseFile() {
     resetResults();
     try {
-      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
-      if (!vaultRootPath) {
-        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
-        vaultRootPath = "~/Documents";
-        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
-        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
-        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
-          console.error("Failed to create RAA_Vault directory:", err);
-        });
-      }
+      await ensureVault();
 
       // 1. Mark the absolute start and start real-time timers
       startTimers();
@@ -350,16 +366,7 @@
   async function handleBrowseArchive() {
     resetResults();
     try {
-      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
-      if (!vaultRootPath) {
-        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
-        vaultRootPath = "~/Documents";
-        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
-        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
-        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
-          console.error("Failed to create RAA_Vault directory:", err);
-        });
-      }
+      await ensureVault();
 
       // 1. Mark the absolute start and start real-time timers
       startTimers();
@@ -399,16 +406,7 @@
   async function handleCertifyFolder() {
     resetResults();
     try {
-      // Failsafe: If no vault path is set, default to Documents/RAA_Vault
-      if (!vaultRootPath) {
-        // Default to user's Documents folder (Note: This may require Tauri API for exact path)
-        vaultRootPath = "~/Documents";
-        console.log("Vault path not set. Defaulting to ~/Documents/RAA_Vault");
-        // TODO: Invoke a Rust command to ensure RAA_Vault directory exists in vaultRootPath
-        await invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((err) => {
-          console.error("Failed to create RAA_Vault directory:", err);
-        });
-      }
+      await ensureVault();
 
       // 1. Mark the absolute start and start real-time timers
       startTimers();
@@ -437,13 +435,44 @@
     }
   }
 
-  async function loadLedger() {
-    activeTab = "ledger";
-    ledgerContent = await invoke("read_ledger", { vaultRootPath });
+  async function loadLedgerData() {
+    isLoadingLedger = true;
+    try {
+      ledgerFiles = await invoke("list_ledger_files", { vaultRootPath });
+      // Clear selection when loading fresh data
+      selectedLedgerPath = "";
+      selectedLedgerContent = "";
+    } catch (e) {
+      ledgerFiles = [];
+      console.error("Failed to list ledger files:", e);
+    } finally {
+      isLoadingLedger = false;
+    }
   }
+
+  async function goToLedger() {
+    activeTab = "ledger";
+    await loadLedgerData();
+  }
+
+  async function selectLedgerFile(filePath: string) {
+    selectedLedgerPath = filePath;
+    try {
+      selectedLedgerContent = await invoke("read_single_ledger_file", { fullPath: filePath });
+    } catch (e) {
+      selectedLedgerContent = `Error loading file: ${e}`;
+    }
+  }
+
+  function filteredLedgerFiles() {
+    if (!ledgerSearch.trim()) return ledgerFiles;
+    const q = ledgerSearch.toLowerCase();
+    return ledgerFiles.filter((f) => f.name.toLowerCase().includes(q));
+  }
+
   async function runIntegrityCheck() {
     activeTab = "integrity";
-    integrityReport = await invoke("check_integrity");
+    integrityReport = await invoke("check_integrity", { vaultRootPath });
   }
 </script>
 
@@ -454,7 +483,7 @@
       class="logo-btn"
       onclick={() => (activeTab = "welcome")}>🛡️ RAA GATEKEEPER</button
     >
-    <div class="version-tag">v0.3.0-PHASE-3</div>
+    <div class="version-tag">v0.4.0-dev</div>
   </header>
 
   <nav class="nav-bar">
@@ -486,7 +515,7 @@
         resetResults();
       }}>🔏 Certify</button
     >
-    <button class:active={activeTab === "ledger"} onclick={loadLedger}
+    <button class:active={activeTab === "ledger"} onclick={goToLedger}
       >📜 Ledger</button
     >
     <button
@@ -514,14 +543,6 @@
         <span class="alert-badge">{watcherHistory.length}</span>
       {/if}
     </button>
-    <!-- Add this button right after the alert-hub-btn button in the nav-bar -->
-    <button
-      class="roadmap-btn"
-      onclick={loadRoadmap}
-      class:active={activeTab === "roadmap"}
-    >
-      📋 Roadmap
-    </button>
   </nav>
 
   {#if isProcessing}<div class="progress-line"></div>{/if}
@@ -533,7 +554,7 @@
           <h2>System Status: {isConfigured ? "ONLINE" : "STANDBY"}</h2>
           <div class="welcome-card">
           <p class="subtitle">
-            Forensic protocols armed. Logs in {vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "(Set Location in Settings)"}
+            Forensic protocols armed. Logs in {displayVaultPath}
           </p>
           </div>
         </section>
@@ -698,10 +719,14 @@
             <div class="settings-group-header">
               <h4 class="filter-title">🧠 AI Core Configuration</h4>
             </div>
-            <label>Base URL <input type="text" bind:value={baseUrl} /></label>
-            <label
-              >Model Name <input type="text" bind:value={modelName} /></label
-            >
+            <label style="display: block; margin-bottom: 12px;">
+              Model Name
+              <input type="text" bind:value={modelName} style="width: 280px;" />
+            </label>
+            <label style="display: block;">
+              Base URL
+              <input type="text" bind:value={baseUrl} style="width: 420px; font-size: 12px;" />
+            </label>
 
             <div class="filter-logic-zone">
               <h4 class="filter-title">🔍 Audit Filter Logic</h4>
@@ -735,31 +760,47 @@
             >
               <h4 class="filter-title">📁 RAA Vault Location</h4>
               <p class="filter-hint">
-                Select the root directory for RAA_Vault (folder name is fixed):
+                The vault is always stored inside a folder named <strong>RAA_Vault</strong>. 
+                When no custom root is selected, it uses <code>~/Documents/RAA_Vault</code> by default (created automatically on first use).
               </p>
               <div style="display: flex; flex-direction: column; gap: 8px;">
-                {#if vaultRootPath}
-                  <div
-                    class="folder-slot"
-                    style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
-                  >
+                <!-- Current Vault Status -->
+                <div
+                  class="folder-slot"
+                  style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
+                >
+                  {#if vaultRootPath && vaultRootPath !== "~/Documents"}
                     <span
                       class="path-text"
                       style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                    >{vaultRootPath}</span>
+                    >{displayVaultPath}</span>
                     <button
                       class="remove-btn"
                       style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;"
                       onclick={() => vaultRootPath = ""}
                     >×</button>
-                  </div>
-                {/if}
+                  {:else}
+                    <span
+                      class="path-text"
+                      style="font-size: 11px; color: #4ade80;"
+                    >~/Documents/RAA_Vault <span style="color:#666; font-size:10px;">(default)</span></span>
+                  {/if}
+                </div>
+
                 <button
                   class="add-slot-btn"
                   style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
                   onclick={selectVaultRootPath}
                 >
                   + Select Root Directory for RAA_Vault
+                </button>
+
+                <button
+                  class="add-slot-btn"
+                  style="margin-top: 6px; background: transparent; border: 1px dashed #555; color: #777; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
+                  onclick={setDefaultVault}
+                >
+                  Set Default to ~/Documents/RAA_Vault
                 </button>
               </div>
             </div>
@@ -836,26 +877,74 @@
         </section>
         {:else if activeTab === "ledger"}
         <section class="tool-view">
-          <h2>Ledger Logs</h2>
-          <p class="subtitle">Historical audit logs from RAA_Vault</p>
-          <div class="ledger-container" style="background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 20px; height: 400px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 11px; color: #ccc;">
-            {#if ledgerContent}
-              <pre>{ledgerContent}</pre>
-            {:else}
-              <p style="color: #666; font-style: italic;">Loading ledger content or no logs available...</p>
-            {/if}
+          <div style="margin-bottom: 8px;">
+            <h2 style="margin: 0;">📜 Forensic Ledger</h2>
+            <p class="subtitle" style="margin: 4px 0 0;">{ledgerFiles.length} reports in vault</p>
           </div>
-        </section>
-      {:else if activeTab === "roadmap"}
-        <section class="tool-view">
-          <h2>Roadmap Progress</h2>
-          <p class="subtitle">Temporary view of ROADMAP.md content</p>
-          <div class="roadmap-container" style="background: #161616; border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 20px; height: 400px; overflow-y: auto; text-align: left; font-family: monospace; font-size: 11px; color: #ccc;">
-            {#if roadmapContent}
-              <pre>{roadmapContent}</pre>
-            {:else}
-              <p style="color: #666; font-style: italic;">Loading roadmap content...</p>
-            {/if}
+
+          <div style="display: flex; gap: 12px; margin-top: 12px;">
+            <!-- File List -->
+            <div style="flex: 0 0 320px; border: 1px solid #222; border-radius: 6px; background: #111; overflow: hidden; display: flex; flex-direction: column;">
+              <div style="padding: 8px 10px; border-bottom: 1px solid #222; background: #1a1a1a;">
+                <input
+                  type="text"
+                  placeholder="Filter reports..."
+                  bind:value={ledgerSearch}
+                  style="width: 100%; background: #222; border: 1px solid #333; color: #ddd; padding: 6px 8px; font-size: 12px; border-radius: 4px;"
+                />
+              </div>
+
+              <div style="flex: 1; overflow-y: auto; max-height: 420px;">
+                {#if filteredLedgerFiles().length === 0}
+                  <div style="padding: 20px; color: #666; font-size: 12px; text-align: center;">
+                    No .raa reports found.
+                  </div>
+                {:else}
+                  {#each filteredLedgerFiles() as file}
+                    <button
+                      class="ledger-row"
+                      class:selected={selectedLedgerPath === file.path}
+                      onclick={() => selectLedgerFile(file.path)}
+                    >
+                      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                        <span style="font-size: 12px; color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                          {file.has_violation ? "🚨" : "🛡️"}
+                        </span>
+                        <span style="flex: 1; text-align: left; font-size: 11px; font-family: monospace; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                          {file.name}
+                        </span>
+                      </div>
+                      <div style="font-size: 10px; color: #666; text-align: right; margin-top: 2px;">
+                        {file.modified}
+                      </div>
+                    </button>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+
+            <!-- Detail Pane -->
+            <div style="flex: 1; border: 1px solid #222; border-radius: 6px; background: #111; padding: 12px; min-height: 420px; overflow-y: auto; font-size: 12px;">
+              {#if !selectedLedgerPath}
+                <div style="color: #666; padding: 20px; text-align: center; font-style: italic;">
+                  Select a report from the left to view its forensic details.
+                </div>
+              {:else}
+                <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #222; font-size: 11px; color: #888;">
+                  <strong>{selectedLedgerPath.split('/').pop()}</strong>
+                </div>
+
+                {#if selectedLedgerContent}
+                  {#each getReportSegments(selectedLedgerContent) as segment}
+                    <div class="ledger-incident-card">
+                      <pre class="raw-forensics" style="margin: 0;">{@html highlightSegment(segment)}</pre>
+                    </div>
+                  {/each}
+                {:else}
+                  <div style="color: #666;">Loading report...</div>
+                {/if}
+              {/if}
+            </div>
           </div>
         </section>
       {/if}
@@ -1500,20 +1589,31 @@
     position: relative;
     display: inline-block;
   }
-  .roadmap-btn {
-  position: relative;
-  margin-left: 10px;
-  background: transparent;
-  border: none;
-  color: #888;
-  padding: 8px 16px;
-  font-size: 12px;
-  cursor: pointer;
+
+  /* === New Ledger Browser Styles === */
+  .ledger-row {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #1f1f1f;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: background 0.1s;
   }
-  .roadmap-btn.active {
-    color: var(--primary);
+  .ledger-row:hover {
+    background: #1a1a1a;
+  }
+  .ledger-row.selected {
     background: #222;
+    border-left: 3px solid var(--primary);
+  }
+  .ledger-incident-card {
+    background: #1a1a1a;
+    border: 1px solid #222;
     border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
   }
 </style>
 

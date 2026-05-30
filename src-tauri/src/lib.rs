@@ -47,6 +47,15 @@ struct FileJob {
     size: usize,
 }
 
+#[derive(Serialize, Clone)]
+struct LedgerFile {
+    name: String,
+    path: String,
+    modified: String,
+    size: u64,
+    has_violation: bool,
+}
+
 fn get_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
@@ -102,15 +111,34 @@ fn read_entry_from_disk(manifest_path: &PathBuf, hash: &str) -> Option<RAAReport
     None
 }
 
+// --- VAULT PATH RESOLVER (handles ~, empty, and absolute paths correctly) ---
+fn resolve_vault_root(vault_root_path: &str) -> PathBuf {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+
+    if vault_root_path.is_empty() {
+        return PathBuf::from(&home).join("Documents/RAA_Vault");
+    }
+
+    let trimmed = vault_root_path.trim_end_matches('/');
+
+    // If the value already points to the full vault dir, use it directly
+    if trimmed.ends_with("RAA_Vault") {
+        return PathBuf::from(trimmed);
+    }
+
+    // Support ~/Documents and ~ as home
+    if trimmed == "~" || trimmed.starts_with("~/") {
+        let rest = trimmed.strip_prefix("~/").unwrap_or("");
+        return PathBuf::from(&home).join(rest).join("RAA_Vault");
+    }
+
+    // Absolute or relative path provided by user (from dialog) — append /RAA_Vault
+    PathBuf::from(trimmed).join("RAA_Vault")
+}
+
 // --- RAA LOGGING ENGINE ---
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str, vault_root_path: &str) -> PathBuf {
-    // Use the provided vault_root_path or default to Documents/RAA_Vault if empty
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let audit_root = if vault_root_path.is_empty() {
-        PathBuf::from(home).join("Documents/RAA_Vault")
-    } else {
-        PathBuf::from(vault_root_path).join("RAA_Vault")
-    };
+    let audit_root = resolve_vault_root(vault_root_path);
     
     if !audit_root.exists() {
         let _ = fs::create_dir_all(&audit_root);
@@ -150,12 +178,12 @@ async fn audit_command(
     command_str: String,
     base_url: String,
     model_name: String,
+    vault_root_path: String,
 ) -> Result<RAAReport, String> {
     let hash = get_content_hash(&command_str);
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    
-    // Pointing to the new visible RAA_Vault master file
-    let bible_path = PathBuf::from(home).join("Documents/RAA_Vault/Gatekeeper-master-terminal-history.raa");
+    // Respect user-selected vault (handles ~ correctly)
+    let bible_dir = resolve_vault_root(&vault_root_path);
+    let bible_path = bible_dir.join("Gatekeeper-master-terminal-history.raa");
 
     if let Some(cached) = read_entry_from_disk(&bible_path, &hash) {
         return Ok(cached);
@@ -170,7 +198,7 @@ async fn audit_command(
     )
     .await?;
 
-    let path = log_to_raa("audit", &command_str, &hash, &report.reasoning, "");
+    let path = log_to_raa("audit", &command_str, &hash, &report.reasoning, &vault_root_path);
     Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
 }
 
@@ -179,6 +207,7 @@ async fn scan_file_integrity(
     file_path: String,
     base_url: String,
     model_name: String,
+    vault_root_path: String,
 ) -> Result<RAAReport, String> {
     let path = PathBuf::from(&file_path);
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -197,7 +226,7 @@ async fn scan_file_integrity(
         &target_label,
     )
     .await?;
-    let path = log_to_raa("analyze", &target_label, &hash, &report.reasoning, "");
+    let path = log_to_raa("analyze", &target_label, &hash, &report.reasoning, &vault_root_path);
 
     Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
 }
@@ -263,7 +292,7 @@ async fn call_llm_auditor(
 static WATCHER: Lazy<Mutex<Option<notify::RecommendedWatcher>>> = Lazy::new(|| Mutex::new(None));
 
 #[tauri::command]
-async fn check_integrity() -> Result<serde_json::Value, String> {
+async fn check_integrity(vault_root_path: Option<String>) -> Result<serde_json::Value, String> {
     // 1. Hardware Probes
     let is_multithreaded = rayon::current_num_threads() > 1;
     let is_bucket_active = walkdir::WalkDir::new(".")
@@ -272,14 +301,21 @@ async fn check_integrity() -> Result<serde_json::Value, String> {
         .next()
         .is_some();
 
-    // 2. Exact Key Match for Svelte
+    // 2. Actually test vault resolvability
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+    let audit_root = match &vault_root_path {
+        Some(p) if !p.is_empty() => PathBuf::from(p).join("RAA_Vault"),
+        _ => PathBuf::from(home).join("Documents/RAA_Vault"),
+    };
+    let vault_ok = audit_root.exists();
+
     Ok(serde_json::json!({
         "parallel_hashing": is_multithreaded,
         "bucket_traversal": is_bucket_active,
         "ai_reasoning": true,
         "terminal_input_lock": true,
         "zip_safety": true,
-        "vault_path": true,
+        "vault_path": vault_ok,
         "disk_first_verification": true
     }))
 }
@@ -291,6 +327,7 @@ async fn scan_compressed_archive(
     allowed_extensions: Vec<String>,
     base_url: String,
     model_name: String,
+    vault_root_path: String,
 ) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -331,7 +368,7 @@ async fn scan_compressed_archive(
         }
     }
     let final_text = internal_entries.join("\n");
-    log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text, "");
+    log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text, &vault_root_path);
     Ok(RAAReport {
         verdict: if violation_found {
             "VIOLATION FOUND".into()
@@ -351,6 +388,7 @@ async fn generate_manifest(
     allowed_extensions: Vec<String>,
     base_url: String,
     model_name: String,
+    vault_root_path: String,
 ) -> Result<String, String> {
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
     let mut target_files = Vec::new();
@@ -453,20 +491,14 @@ async fn generate_manifest(
         }
     }
 
-    log_to_raa("certify", &folder_path, "FOLDER_HASH", &ledger_entries, "");
+    log_to_raa("certify", &folder_path, "FOLDER_HASH", &ledger_entries, &vault_root_path);
     Ok("Success. Report stored in RAA_Vault".into())
 }
 
 // --- RAA LEDGER BROWSER ---
 #[tauri::command]
 async fn read_ledger(vault_root_path: String) -> Result<String, String> {
-    // Use the provided vault_root_path or default to Documents/RAA_Vault if empty
-    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let audit_root = if vault_root_path.is_empty() {
-        PathBuf::from(home).join("Documents/RAA_Vault")
-    } else {
-        PathBuf::from(vault_root_path).join("RAA_Vault")
-    };
+    let audit_root = resolve_vault_root(&vault_root_path);
     
     let mut all_logs = String::new();
 
@@ -493,6 +525,70 @@ async fn read_ledger(vault_root_path: String) -> Result<String, String> {
     }
     
     Ok(all_logs)
+}
+
+// --- VAULT HELPERS ---
+#[tauri::command]
+async fn create_vault_directory(root_path: String) -> Result<String, String> {
+    let audit_root = resolve_vault_root(&root_path);
+
+    fs::create_dir_all(&audit_root)
+        .map_err(|e| format!("Failed to create RAA_Vault at {:?}: {}", audit_root, e))?;
+
+    Ok(audit_root.to_string_lossy().into_owned())
+}
+
+// --- LEDGER BROWSER COMMANDS ---
+#[tauri::command]
+async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, String> {
+    let audit_root = resolve_vault_root(&vault_root_path);
+
+    if !audit_root.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut files: Vec<LedgerFile> = Vec::new();
+
+    if let Ok(entries) = fs::read_dir(&audit_root) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("raa") {
+                continue;
+            }
+
+            let metadata = entry.metadata().ok();
+            let modified = metadata
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| {
+                    let datetime: chrono::DateTime<chrono::Local> = t.into();
+                    Some(datetime.format("%Y-%m-%d %H:%M").to_string())
+                })
+                .unwrap_or_else(|| "unknown".into());
+
+            let size = metadata.map(|m| m.len()).unwrap_or(0);
+
+            let content = fs::read_to_string(&path).unwrap_or_default();
+            let has_violation = content.to_uppercase().contains("VIOLATION");
+
+            files.push(LedgerFile {
+                name: path.file_name().unwrap_or_default().to_string_lossy().into(),
+                path: path.to_string_lossy().into(),
+                modified,
+                size,
+                has_violation,
+            });
+        }
+    }
+
+    // Newest first
+    files.sort_by(|a, b| b.modified.cmp(&a.modified));
+    Ok(files)
+}
+
+#[tauri::command]
+async fn read_single_ledger_file(full_path: String) -> Result<String, String> {
+    fs::read_to_string(&full_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -547,15 +643,6 @@ async fn toggle_watcher(
     Ok(())
 }
 
-#[tauri::command]
-async fn read_roadmap() -> String {
-    let roadmap_path = "/Users/agent-naive/dev/RAA-Gatekeeper/ROADMAP.md";
-    match std::fs::read_to_string(roadmap_path) {
-        Ok(content) => content,
-        Err(e) => format!("Failed to read ROADMAP.md: {}", e),
-    }
-}
-
 pub fn run() {
     dotenvy::dotenv().ok();
     tauri::Builder::default()
@@ -570,7 +657,9 @@ pub fn run() {
             read_ledger,
             check_integrity,
             toggle_watcher,
-            read_roadmap
+            create_vault_directory,
+            list_ledger_files,
+            read_single_ledger_file
         ])
         .run(tauri::generate_context!())
         .expect("error");
