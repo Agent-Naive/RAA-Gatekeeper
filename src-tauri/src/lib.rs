@@ -562,8 +562,25 @@ async fn generate_manifest(
             }
 
             batch_text.push_str(
-                "Now begin your analysis with FILE 1 and proceed sequentially through all files as instructed above."
+                "Now begin your analysis with FILE 1 and proceed sequentially through all files as instructed above.\n\n"
             );
+
+            // Force structured JSON output
+            batch_text.push_str(&format!(
+                "OUTPUT FORMAT (MANDATORY - NO EXCEPTIONS):\n\
+                 You MUST respond with ONLY a single valid JSON array. Do not include any text, explanation, markdown, or anything before or after the JSON.\n\n\
+                 The JSON array must contain exactly {} objects (one per file), in the same order as the files above.\n\n\
+                 Each object must follow this exact schema:\n\
+                 {{\n\
+                   \"file\": \"exact file path from the list above\",\n\
+                   \"verdict\": \"CERTIFIED\" or \"VIOLATION FOUND\",\n\
+                   \"analysis\": \"Your complete, detailed security analysis for ONLY this specific file. Be thorough.\"\n\
+                 }}\n\n\
+                 Critical rules:\n\
+                 - Analyze each file completely independently. Do not let findings from one file affect another.\n\
+                 - The \"analysis\" field must contain your full reasoning for that file only.\n\
+                 - Output NOTHING except the raw JSON array."
+            , file_count));
         }
 
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
@@ -579,8 +596,32 @@ async fn generate_manifest(
             any_violations = true;
         }
 
-        // Write rich per-file analysis blocks (same format as Archive audits)
-        for job in bucket {
+        // Try to parse structured JSON output from the model
+        #[derive(serde::Deserialize)]
+        struct FileAnalysis {
+            file: String,
+            verdict: String,
+            analysis: String,
+        }
+
+        let analyses: Vec<FileAnalysis> = match serde_json::from_str(&report.reasoning) {
+            Ok(parsed) => parsed,
+            Err(_) => {
+                // Fallback: model did not return valid JSON. Use the raw response for all files.
+                eprintln!("Warning: Model did not return valid JSON for multi-file bucket. Falling back to raw response.");
+                vec![]
+            }
+        };
+
+        // Write rich per-file analysis blocks
+        for (i, job) in bucket.iter().enumerate() {
+            let (verdict, analysis_text) = if let Some(a) = analyses.get(i) {
+                (a.verdict.clone(), a.analysis.clone())
+            } else {
+                // Fallback to the single report if parsing failed
+                (report.verdict.clone(), report.reasoning.trim().to_string())
+            };
+
             let analysis_block = format!(
                 "--- RAA FILE ANALYSIS ---\n\
                  File: {}\n\
@@ -590,10 +631,14 @@ async fn generate_manifest(
                  ------------------------\n",
                 job.path.display(),
                 job.hash,
-                report.verdict,
-                report.reasoning.trim()
+                verdict,
+                analysis_text
             );
             ledger_entries.push_str(&analysis_block);
+
+            if verdict.to_uppercase().contains("VIOLATION") {
+                any_violations = true;
+            }
         }
     }
 
