@@ -45,6 +45,10 @@ struct FileJob {
     content: String,
     hash: String,
     size: usize,
+    // Used when a large file must be split across multiple LLM calls
+    is_file_chunk: bool,
+    chunk_index: usize,
+    total_chunks: usize,
 }
 
 #[derive(Serialize, Clone)]
@@ -453,6 +457,9 @@ async fn generate_manifest(
                     size: 0,
                     hash: "ZIP".into(),
                     content: "".into(),
+                    is_file_chunk: false,
+                    chunk_index: 0,
+                    total_chunks: 0,
                 });
             }
             let content = fs::read_to_string(&path).ok().unwrap_or_default();
@@ -462,6 +469,9 @@ async fn generate_manifest(
                 size: content.len(),
                 hash,
                 content,
+                is_file_chunk: false,
+                chunk_index: 0,
+                total_chunks: 0,
             })
         })
         .collect();
@@ -484,18 +494,33 @@ async fn generate_manifest(
             continue;
         }
 
-        // Large file that exceeds the entire bucket limit
+        // Large file that exceeds the bucket limit — split it into proper chunks
         if job.size > BUCKET_LIMIT {
-            // Flush current bucket first if it has anything
+            // Flush any current bucket first
             if !current_bucket.is_empty() {
                 buckets.push(current_bucket);
                 current_bucket = Vec::new();
                 current_size = 0;
             }
-            // The large file will be split across multiple buckets
-            let size = job.size;
-            current_bucket.push(job);
-            current_size += size;
+
+            let original_content = &job.content;
+            let total_chunks = (original_content.len() + BUCKET_LIMIT - 1) / BUCKET_LIMIT;
+
+            for (chunk_idx, chunk) in original_content.as_bytes().chunks(BUCKET_LIMIT).enumerate() {
+                let chunk_content = String::from_utf8_lossy(chunk).to_string();
+
+                let chunk_job = FileJob {
+                    path: job.path.clone(),
+                    size: chunk_content.len(),
+                    hash: job.hash.clone(),
+                    content: chunk_content,
+                    is_file_chunk: true,
+                    chunk_index: chunk_idx,
+                    total_chunks,
+                };
+
+                buckets.push(vec![chunk_job]); // Each chunk of a large file gets its own bucket
+            }
             continue;
         }
 
@@ -522,15 +547,38 @@ async fn generate_manifest(
         let mut batch_text = String::new();
 
         if bucket.len() == 1 {
-            // Single file in bucket — ask for focused analysis
             let job = &bucket[0];
-            batch_text.push_str(&format!(
-                "Analyze the following file for security issues, malicious code, or suspicious behavior.\n\n\
-                 FILE: {}\nHASH: {}\n\nCONTENT:\n{}\n",
-                job.path.display(),
-                job.hash,
-                job.content
-            ));
+
+            if job.is_file_chunk {
+                // This is a chunk of a large file — strong isolation instructions
+                let reset_instruction = if job.chunk_index > 0 {
+                    "\n\nIMPORTANT: Treat the content below in complete isolation. Forget any previous content or analysis from earlier chunks of this file. Start with a completely fresh analysis."
+                } else {
+                    ""
+                };
+
+                batch_text.push_str(&format!(
+                    "You are receiving one chunk of a large file that has been split for analysis.{}\n\n\
+                     Analyze ONLY the content in this message for security issues, malicious code, or suspicious behavior.\n\
+                     Do not reference or assume any information from previous chunks of this file.\n\n\
+                     FILE: {} (Chunk {} of {})\nHASH: {}\n\nCONTENT:\n{}\n",
+                    reset_instruction,
+                    job.path.display(),
+                    job.chunk_index + 1,
+                    job.total_chunks,
+                    job.hash,
+                    job.content
+                ));
+            } else {
+                // Normal single file
+                batch_text.push_str(&format!(
+                    "Analyze the following file for security issues, malicious code, or suspicious behavior.\n\n\
+                     FILE: {}\nHASH: {}\n\nCONTENT:\n{}\n",
+                    job.path.display(),
+                    job.hash,
+                    job.content
+                ));
+            }
         } else {
             // Multiple files — ask the model to analyze them individually when possible
             batch_text.push_str(
