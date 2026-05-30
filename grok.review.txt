@@ -162,3 +162,95 @@ By creating the folder on first run and always storing a concrete path, we elimi
 4. Keep technical details, decisions, and "why" explanations — these are the things that get lost in context compaction.
 
 Good luck. The project is making steady progress toward becoming a genuinely useful protective utility for people bringing AI-generated code onto their machines.
+
+---
+
+## Capture Value of Audit - Checkpoint
+
+**Label:** Capture Value of Audit  
+**Commit ID:** `ed5a45b707296d909a0ccd222b08c52b3fc80373`  
+**Date of Capture:** 2026-05-30 (end of session)  
+**Purpose:** Hard reference point before implementing structured output improvements for multi-file buckets in Certify. This checkpoint preserves the state of the bucketing + prompting logic after the isolation prompting revert and before moving to forced structured output (JSON / strict sections).
+
+### Full Explanation of Options (Captured from session)
+
+**Current Situation (What We Do Today)**
+
+When a bucket contains multiple files (e.g. 5 small files), we now send a strong prompt telling the LLM to analyze them ONE AT A TIME, completely independently.
+
+The LLM then returns **one single response** (the `report.reasoning` field). This response might be 800–2000+ tokens long.
+
+After we get that response, this is what currently happens in the code:
+
+```rust
+for job in bucket {
+    let analysis_block = format!(
+        "--- RAA FILE ANALYSIS ---\n\
+         File: {}\n\
+         Hash: {}\n\
+         Verdict: {}\n\
+         Analysis:\n{}\n\
+         ------------------------\n",
+        job.path.display(),
+        job.hash,
+        report.verdict,
+        report.reasoning.trim()     // ← The SAME reasoning is used for every file
+    );
+    ledger_entries.push_str(&analysis_block);
+}
+```
+
+**Result:**  
+Every single file in that bucket gets the **exact same block of text** written under its `Analysis:` section. The only thing that changes per file is the `File:`, `Hash:`, and `Verdict:` lines.
+
+This is the part that needs improvement.
+
+### The Three Options Discussed
+
+**Option A: Try to Parse/Split the Model’s Response (Post-processing)**
+
+After the LLM sends back one big blob of text, we could attempt to **parse** it and split it into per-file sections.
+
+For example, if the model responds like this:
+
+```
+FILE 1 ANALYSIS:
+[long analysis for file 1]
+
+FILE 2 ANALYSIS:
+[long analysis for file 2]
+```
+
+We could write code that tries to detect these sections and then assign the correct piece of reasoning to each file’s `Analysis:` block.
+
+**Pros:**
+- The ledger would actually contain different, relevant analysis for each file.
+- Much higher forensic value.
+
+**Cons / Difficulties:**
+- LLMs are inconsistent. Sometimes they follow the format, sometimes they don’t.
+- They might use different headings.
+- They might blend analyses together.
+- Parsing this reliably is fragile and can get very complex.
+- If parsing fails, we fall back to dumping the entire response under every file anyway.
+
+**Option B: Force Better Structure from the Model (Prompt Engineering)**
+
+Instead of trying to clean up the response *after* we receive it, we could change the prompt even more aggressively to force the model to return output in a parseable format (e.g. clearly labeled sections, or even JSON).
+
+This is related to the prompting work we just did, but goes further.
+
+**Option C (Strongest Recommendation at the time):** Force structured output from the model using e.g. JSON or very strict sections.
+
+**Honest Opinion at Time of Capture:**
+The prompting improvement (strong “one file at a time, independently” instructions) is the **highest leverage** change for the quality of the actual *analysis*.
+
+However, even with great prompting, if we still blindly paste the entire model response under every file in the bucket, we’re leaving a lot of value on the table.
+
+The question was whether we also want to try to **capture** that sequential analysis properly in the final `.raa` file (via structured output or parsing).
+
+---
+
+**End of Capture Value of Audit Section**
+
+This section is intended as a permanent reference point for the state of the Certify multi-file bucket logic before moving into structured output implementation.
