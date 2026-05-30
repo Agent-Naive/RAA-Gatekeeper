@@ -276,6 +276,28 @@
     return segments;
   }
 
+  // =============================================
+  // TEMPORARILY DISABLED: Report Colorization
+  //
+  // We have removed all calls to highlightSegment() from
+  // the actual report displays (Ledger detail pane and
+  // live Vault popup) so that reports render as plain
+  // text only.
+  //
+  // Reason: This makes it much easier to evaluate the
+  // raw structure, content, and correctness of reports
+  // (especially the new Certify multi-file structured
+  // output) without colorization interfering with testing.
+  //
+  // The function + its associated CSS classes
+  // (.text-success, .text-danger, .path-text) are being
+  // kept for now so we can cleanly re-enable and
+  // micro-tune colorization later.
+  //
+  // IMPORTANT:
+  // Do NOT call highlightSegment() on report content
+  // until we explicitly decide to turn coloring back on.
+  // =============================================
   function highlightSegment(text: string) {
     if (!text) return "";
     return text
