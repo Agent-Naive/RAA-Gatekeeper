@@ -1,0 +1,194 @@
+# RAA-Gatekeeper — After Action Report / Session Review
+**Date:** 2026-05-30 (end of day)
+**Session Focus:** Heavy UI/UX refinement on Ledger + Integrity Guard, CSS architecture cleanup, feature additions (delete reports), and bug documentation.
+
+---
+
+## 1. Current Project Snapshot
+
+**Primary Goal of Session:** Make the Ledger view and Integrity Guard feel polished and usable while continuing the broader CSS migration to a contributor-friendly structure.
+
+**Major Wins Today:**
+- Restored and improved the **Integrity Guard** visual layout (it had lost most of its structure during earlier CSS cleanup).
+- Significantly improved the **Ledger left pane** layout and balance (now at 300px, which the user confirmed feels "nice").
+- Moved the delete (🗑) button to the bottom line with the date stamp (right-aligned). This gave filenames much more horizontal breathing room and eliminated horizontal scroll/bleeding issues.
+- Added consistent right-edge padding alignment across the filter input, filename line, and trashcan.
+- Added full **delete report functionality** with confirmation modal.
+- Documented the critical **ALLSAFE bug** (Certify always reports success even with violations) in both ROADMAP.md and a dedicated `knownbug.ALLSAFE.txt`.
+- Continued the big CSS migration (external `app.css` + `+layout.svelte`).
+
+**Current State:** Working tree is clean. Latest work pushed to GitHub (commit `529ca3c` + previous).
+
+---
+
+## 2. Key UI Layout Decisions (Ledger View) — Current Specs
+
+### Left Pane (File List)
+- Width: `flex: 0 0 300px` (locked here after iterative testing — user approved)
+- `overflow-x: hidden` on both the panel and list container (prevents ugly horizontal scrollbars)
+- Search/filter input lives in `.ledger-header` with `padding: 6px 8px` + `box-sizing: border-box`
+- Rows now use a two-line structure:
+  - **Top line:** Icon (🛡️/🚨) + filename (flex-1 + `text-ellipsis` + `min-width: 0`)
+  - **Bottom line:** Date (left) + 🗑 delete button (right)
+- Row padding: `6px 8px`
+- Consistent 8px right gutter on both the filename line and the date+trash line to align with the filter input's right edge.
+
+### Right Pane (Detail View)
+- `min-width: 480px`
+- `max-width: 620px`
+- `flex: 1`
+- `padding: 12px` (all sides)
+
+### Gap Between Panes
+- Reduced to `gap-8` (from `gap-12`) during balancing work.
+
+### Delete Functionality
+- Per-report delete button (🗑) appears on hover in the list.
+- Custom confirmation modal (`.delete-confirm-overlay` + `.delete-confirm-dialog`) with clear warning.
+- Backend command: `delete_ledger_file(fullPath, vaultRootPath)` with safety checks:
+  - Must be inside current vault root
+  - Must be a `.raa` file
+  - Proper error handling
+- After delete: list auto-refreshes; if the deleted report was open, detail pane clears cleanly.
+
+---
+
+## 3. Integrity Guard (Restored)
+
+**Problem:** During the big CSS cleanup, `.integrity-grid` and `.check-item` styles were completely lost. The section was crammed inside a generic `.welcome-card` and looked broken.
+
+**Solution Implemented:**
+- Created dedicated `.integrity-container` (with its own background, border, padding).
+- `.integrity-grid` uses CSS Grid: `repeat(auto-fit, minmax(260px, 1fr))` with good gap.
+- Each `.check-item` is a proper card with background, border, and nice internal spacing.
+- Status icons (✅ / ❌) are larger and visually clear.
+- The 7 checks from `check_integrity` are now well spaced and readable.
+
+**Backend:** `check_integrity` returns a JSON object with 7 boolean fields. All currently hard-coded to true except real runtime checks for `parallel_hashing`, `bucket_traversal`, and `vault_path`.
+
+**Note:** `.welcome-card` style still exists in the component `<style>` block but is no longer used for Integrity.
+
+---
+
+## 4. CSS Architecture Status
+
+**Major Ongoing Initiative:** Move away from bloated inline styles and component `<style>` blocks toward a clean, external design system.
+
+**Current State:**
+- Primary styles live in `src/app.css` (global tokens, components, utilities).
+- `src/routes/+layout.svelte` imports `../app.css` globally (simple and correct pattern).
+- Many component-specific styles were pruned from `+page.svelte` during cleanup.
+- Some styles remain in the component's `<style>` tag (e.g., `.welcome-card`, DNA styles, some older utilities). These are being gradually reviewed.
+
+**User Preference (Strong):**
+- Contributor-friendly structure.
+- Prefer external CSS over heavy in-component styles or Tailwind bloat.
+- Keep the design system clean and maintainable.
+
+**Recent Related Work:**
+- Added many utility classes in app.css (`.flex`, `.gap-*`, `.text-*`, etc.).
+- Created `.ledger-delete-btn`, delete modal styles, integrity styles, etc. directly in app.css.
+
+---
+
+## 5. Critical Known Issues & Documentation
+
+### HIGH PRIORITY: The "ALLSAFE" Bug (Certify)
+- **File:** `knownbug.ALLSAFE.txt` (detailed spec)
+- **Summary:** `generate_manifest` (Certify) **always** returns "Success. Report stored in RAA_Vault" even when many files are flagged as "RAA VIOLATION DETECTED".
+- The ledger correctly records the violations per file, but the overall operation and UI treat it as a clean success.
+- This completely breaks the meaning of "Certify."
+- **Status:** Documented in ROADMAP.md under a new "🚨 Critical Bugs" section.
+- **Next Step:** Change `generate_manifest` to return a proper `RAAReport`, track violations, and update the frontend to show failure states.
+
+### Other Notes
+- Rich per-file AI analysis is now being written for **Archive** (ZIP) audits using `--- RAA FILE ANALYSIS ---` blocks. This is a big improvement in forensic value.
+- Certify still uses the old flat format (work for later).
+
+---
+
+## 6. Important Project Rules & Preferences
+
+- **Never edit RAA_VISION.md** — strict standing rule. Any changes must be immediately reverted.
+- **End-of-day hygiene:** Working tree should be clean before stopping. RAA_Vision.md must be clean.
+- **Development Style:** Iterative, small, feedback-driven changes. User likes to see progress quickly and give precise direction ("300px is nice", "move trashcan to bottom line", etc.).
+- **CSS Philosophy:** External `app.css` + utilities is preferred for long-term maintainability and contributor friendliness.
+- **Git:** Frequent small commits with clear messages. Pushes at natural stopping points (especially end of day).
+
+---
+
+## 7. File Inventory (Key Locations)
+
+### Core App
+- `src/routes/+page.svelte` — Main UI (very large, contains most logic + some remaining styles)
+- `src/app.css` — Primary design system (growing, preferred location for new styles)
+- `src/routes/+layout.svelte` — Global CSS import
+- `src-tauri/src/lib.rs` — Rust backend (commands, ledger writing, integrity checks, etc.)
+
+### Documentation (Important for Tomorrow)
+- `ROADMAP.md` — Now contains a "🚨 Critical Bugs / High Priority Fixes" section at the top.
+- `knownbug.ALLSAFE.txt` — Detailed spec + fix requirements for the Certify bug. Treat this as the authoritative document if you pick up the fix.
+- `grok.review.txt` — This file (you are here).
+
+### Other
+- `testbed/` — Various test files used during development.
+- Recent rich ledger format example lives in Archive `.raa` files (look for `--- RAA FILE ANALYSIS ---` blocks).
+
+---
+
+## 8. What Was Accomplished This Session (High-Level)
+
+1. **Ledger UX Overhaul**
+   - Pane width balancing (final: left 300px)
+   - Trashcan relocation to date line + right alignment
+   - Right-edge padding consistency (filter input ↔ filename ↔ trashcan)
+   - Full delete-with-confirmation feature + backend safety command
+
+2. **Integrity Guard Rescue**
+   - Diagnosed complete loss of grid/check-item styles during CSS cleanup
+   - Built new clean, responsive card grid layout
+   - Added dedicated container styling
+
+3. **Architecture & Maintainability**
+   - Continued external CSS migration
+   - Added `+layout.svelte` for proper global stylesheet import
+
+4. **Process & Documentation**
+   - Created `knownbug.ALLSAFE.txt` with comprehensive fix guidance
+   - Updated ROADMAP.md with critical bug visibility
+   - Strict protection of RAA_VISION.md
+
+---
+
+## 9. Recommended Starting Point Tomorrow
+
+1. **Read this file first** (`grok.review.txt`).
+2. Open `knownbug.ALLSAFE.txt` if you want to tackle the Certify correctness bug (highest value item).
+3. Run the app and click through **Ledger** and **Integrity Guard** tabs to re-ground yourself visually.
+4. Check current pane widths and the two-line row structure in the ledger list.
+5. Review the most recent commits for exact changes.
+
+**High-Value Next Candidates:**
+- Fix the ALLSAFE Certify bug (biggest correctness issue).
+- Continue richer report display work in the ledger detail pane (user mentioned wanting to discuss this).
+- Further CSS pruning / moving remaining styles out of `+page.svelte`.
+- Optional: Revisit the half-green/half-silver shield icon idea (user said "disregard for now").
+
+---
+
+## 10. Quick Mental Model for Tomorrow
+
+- **Left Ledger pane** = 300px, two-line rows, trash on bottom-right.
+- **Right Ledger pane** = constrained between 480–620px.
+- **Integrity Guard** = now has its own nice grid of check cards (no longer inside welcome-card).
+- **CSS** = everything important should live in `app.css`.
+- **RAA_VISION.md** = hands off.
+- **Certify** = currently lies about success.
+
+---
+
+**End of Report**
+
+This document was written at the end of a long, productive refinement session. It captures both the "what" and the "why" behind the current state so context loss is minimized when picking the project back up. 
+
+Good luck tomorrow. The project is in a much stronger visual and architectural place than it was at the start of today.
