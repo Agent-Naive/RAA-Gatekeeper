@@ -570,15 +570,19 @@ async fn generate_manifest(
                  REQUIRED OUTPUT FORMAT (YOU MUST FOLLOW EXACTLY):\n\
                  Output ONLY a valid JSON array containing exactly {} objects.\n\
                  Do not write any text, explanations, or markdown before or after the JSON.\n\n\
-                 JSON Schema (each object):\n\
+                 JSON Schema (each object — USE THESE EXACT FIELD NAMES):\n\
                  {{\n\
-                   \"file_number\": {},\n\
-                   \"file_path\": \"exact path shown above\",\n\
+                   \"file_number\": number,\n\
+                   \"file_path\": \"string - use the exact FILE PATH shown above\",\n\
                    \"verdict\": \"CERTIFIED\" or \"VIOLATION FOUND\",\n\
-                   \"analysis\": \"Your full, independent analysis and reasoning for ONLY this file.\"\n\
+                   \"analysis\": \"string - your full independent analysis for ONLY this file\"\n\
                  }}\n\n\
+                 Important:\n\
+                 - Do NOT rename the fields.\n\
+                 - Do NOT wrap the array in an object.\n\
+                 - Output ONLY the raw JSON array, nothing else.\n\n\
                  Begin with FILE 1 and process all files sequentially as instructed."
-            , file_count, file_count));
+            , file_count));
         }
 
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
@@ -595,20 +599,29 @@ async fn generate_manifest(
         }
 
         // Try to parse structured JSON output from the model
-        #[derive(serde::Deserialize)]
+        #[derive(serde::Deserialize, Debug)]
         struct FileAnalysis {
-            // Field is present for JSON deserialization and potential future validation
-            // (e.g. verifying the model returned the correct filename).
-            _file: String,
+            // Kept for schema matching and potential cross-validation
+            _file_number: u32,
+            _file_path: String,
             verdict: String,
             analysis: String,
         }
 
         let analyses: Vec<FileAnalysis> = match serde_json::from_str(&report.reasoning) {
-            Ok(parsed) => parsed,
-            Err(_) => {
-                // Fallback: model did not return valid JSON. Use the raw response for all files.
-                eprintln!("Warning: Model did not return valid JSON for multi-file bucket. Falling back to raw response.");
+            Ok(parsed) => {
+                // Successfully parsed per-file structured output
+                parsed
+            }
+            Err(e) => {
+                // Parsing failed — log the raw response for debugging
+                eprintln!(
+                    "WARNING: Failed to parse structured JSON from model for multi-file bucket.\n\
+                     Error: {}\n\
+                     Raw response (first 2000 chars):\n{}\n",
+                    e,
+                    &report.reasoning.chars().take(2000).collect::<String>()
+                );
                 vec![]
             }
         };
@@ -616,10 +629,20 @@ async fn generate_manifest(
         // Write rich per-file analysis blocks
         for (i, job) in bucket.iter().enumerate() {
             let (verdict, analysis_text) = if let Some(a) = analyses.get(i) {
+                // Successfully got per-file data from model
                 (a.verdict.clone(), a.analysis.clone())
             } else {
-                // Fallback to the single report if parsing failed
-                (report.verdict.clone(), report.reasoning.trim().to_string())
+                // Fallback: model did not follow structured output
+                // Use the overall verdict but mark that structure wasn't followed
+                let fallback_text = if analyses.is_empty() {
+                    format!(
+                        "[MODEL DID NOT RETURN STRUCTURED OUTPUT]\n\n{}",
+                        report.reasoning.trim()
+                    )
+                } else {
+                    report.reasoning.trim().to_string()
+                };
+                (report.verdict.clone(), fallback_text)
             };
 
             let analysis_block = format!(
