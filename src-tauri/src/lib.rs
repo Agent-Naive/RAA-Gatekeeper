@@ -412,7 +412,7 @@ async fn generate_manifest(
     base_url: String,
     model_name: String,
     vault_root_path: String,
-) -> Result<String, String> {
+) -> Result<RAAReport, String> {
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
     let mut target_files = Vec::new();
 
@@ -486,6 +486,8 @@ async fn generate_manifest(
         buckets.push(current_bucket);
     }
     let mut ledger_entries = String::new();
+    let mut any_violations = false;
+
     for bucket in buckets {
         let mut batch_text = String::new();
         for job in &bucket {
@@ -504,6 +506,11 @@ async fn generate_manifest(
                 target_name: "".into(),
                 is_error: false,
             });
+
+        if report.is_error {
+            any_violations = true;
+        }
+
         for job in bucket {
             ledger_entries.push_str(&format!(
                 "File: {} | Hash: {} | AI: {}\n",
@@ -515,7 +522,19 @@ async fn generate_manifest(
     }
 
     log_to_raa("certify", &folder_path, "FOLDER_HASH", &ledger_entries, &vault_root_path);
-    Ok("Success. Report stored in RAA_Vault".into())
+
+    let overall_verdict = if any_violations {
+        "UNCERTIFIED - VIOLATIONS FOUND".to_string()
+    } else {
+        "CERTIFIED".to_string()
+    };
+
+    Ok(RAAReport {
+        verdict: overall_verdict,
+        reasoning: ledger_entries,
+        target_name: folder_path,
+        is_error: any_violations,
+    })
 }
 
 // --- RAA LEDGER BROWSER ---

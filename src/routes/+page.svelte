@@ -546,13 +546,20 @@
         // 2. LAP TICK: Time to prepare the job
         stopHandoffTimer();
         isProcessing = true;
-        certMsg = await invoke("generate_manifest", {
+        const certifyResult = await invoke<any>("generate_manifest", {
           folderPath: selectedFolder,
           allowedExtensions: allowedExts,
           baseUrl,
           modelName,
           vaultRootPath
         });
+
+        // Handle the new richer return type
+        if (certifyResult.is_error) {
+          certMsg = `UNCERTIFIED: ${certifyResult.verdict}`;
+        } else {
+          certMsg = certifyResult.verdict || "CERTIFIED";
+        }
         // 3. COMPLETION: The Oracle has spoken
         stopTotalTimer();
       }
