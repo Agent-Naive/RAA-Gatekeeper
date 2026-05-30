@@ -109,12 +109,15 @@
 
   let baseUrl = $state(localStorage.getItem("raa_base_url") || "");
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
-  let vaultRootPath = $state(localStorage.getItem("raa_vault_root_path") || "");
+
+  let rawVault = localStorage.getItem("raa_vault_root_path") || "";
 
   // Normalize any previously stored value that accidentally included /RAA_Vault
-  if (vaultRootPath.endsWith('/RAA_Vault') || vaultRootPath.endsWith('\\RAA_Vault')) {
-    vaultRootPath = vaultRootPath.replace(/[\\/]RAA_Vault\/?$/, '');
+  if (rawVault.endsWith('/RAA_Vault') || rawVault.endsWith('\\RAA_Vault')) {
+    rawVault = rawVault.replace(/[\\/]RAA_Vault\/?$/, '');
   }
+
+  let vaultRootPath = $state(rawVault);
 
   let displayVaultPath = $derived(
     vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "~/Documents/RAA_Vault"
