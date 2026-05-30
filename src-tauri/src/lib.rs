@@ -511,27 +511,44 @@ async fn generate_manifest(
             any_violations = true;
         }
 
+        // Write rich per-file analysis blocks (same format as Archive audits)
         for job in bucket {
-            ledger_entries.push_str(&format!(
-                "File: {} | Hash: {} | AI: {}\n",
+            let analysis_block = format!(
+                "--- RAA FILE ANALYSIS ---\n\
+                 File: {}\n\
+                 Hash: {}\n\
+                 Verdict: {}\n\
+                 Analysis:\n{}\n\
+                 ------------------------\n",
                 job.path.display(),
                 job.hash,
-                report.verdict
-            ));
+                report.verdict,
+                report.reasoning.trim()
+            );
+            ledger_entries.push_str(&analysis_block);
         }
     }
 
-    log_to_raa("certify", &folder_path, "FOLDER_HASH", &ledger_entries, &vault_root_path);
-
+    // Prepend overall status header
     let overall_verdict = if any_violations {
         "UNCERTIFIED - VIOLATIONS FOUND".to_string()
     } else {
         "CERTIFIED".to_string()
     };
 
+    let overall_header = format!(
+        "--- OVERALL CERTIFY RESULT ---\nStatus: {}\nViolations Detected: {}\n\n",
+        overall_verdict,
+        if any_violations { "YES" } else { "NO" }
+    );
+
+    let full_ledger = format!("{}{}", overall_header, ledger_entries);
+
+    log_to_raa("certify", &folder_path, "FOLDER_HASH", &full_ledger, &vault_root_path);
+
     Ok(RAAReport {
         verdict: overall_verdict,
-        reasoning: ledger_entries,
+        reasoning: full_ledger,
         target_name: folder_path,
         is_error: any_violations,
     })

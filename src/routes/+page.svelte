@@ -309,11 +309,21 @@
   function extractRecordedHashes(text: string): RecordedHash[] {
     if (!text) return [];
 
-    const regex = /File:\s*(.+?)\s*\|\s*Hash:\s*([a-f0-9]{64})/gi;
     const matches: RecordedHash[] = [];
-    let match;
 
-    while ((match = regex.exec(text)) !== null) {
+    // Support old flat format: File: ... | Hash: ...
+    const flatRegex = /File:\s*(.+?)\s*\|\s*Hash:\s*([a-f0-9]{64})/gi;
+    let match;
+    while ((match = flatRegex.exec(text)) !== null) {
+      matches.push({
+        file: match[1].trim(),
+        hash: match[2],
+      });
+    }
+
+    // Support new rich format (File: on one line, Hash: on next line)
+    const richRegex = /File:\s*(.+?)\s*\n\s*Hash:\s*([a-f0-9]{64})/gi;
+    while ((match = richRegex.exec(text)) !== null) {
       matches.push({
         file: match[1].trim(),
         hash: match[2],
