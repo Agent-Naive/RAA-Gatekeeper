@@ -46,6 +46,47 @@ The tool should remain local-first, read-only, and privacy-respecting. It is not
 
 ---
 
+## Strict Git & Push Rules (Operational Discipline)
+
+**Critical Note:** GitHub pushes incur real token/API costs. We must be much more disciplined than typical AI-assisted development sessions.
+
+### Core Rules
+
+1. **Commit locally very frequently**  
+   - Commit after every coherent piece of work or roughly every 15–40 minutes.  
+   - Local commits are free and provide excellent safety + history.  
+   - Never wait long between local commits.
+
+2. **Push to GitHub sparingly**  
+   - Only push at these times:
+     - End of a clear, working milestone or feature
+     - End of a work session / end of day (when user requests a clean stopping point)
+     - When the user explicitly says “push this”, “let’s push”, or similar
+   - Do **not** push after every small change, CSS tweak, or minor fix.
+
+3. **Ask before pushing mid-session**  
+   - Unless we are at a natural checkpoint, explicitly ask the user before doing a push during active work.
+
+4. **Always write good commit messages**  
+   - Even when we’re not pushing immediately, every local commit must have a clear, descriptive message.  
+   - This makes later batch pushes much more useful.
+
+5. **Keep the working tree reasonably clean before pushing**  
+   - Avoid pushing with lots of unrelated or experimental junk in the working directory.
+
+6. **Respect cost**  
+   - Every push has a cost. Treat pushes as a deliberate action, not an automatic reflex.
+
+### Recommended Daily Rhythm
+
+- Commit locally often throughout the session.
+- Push 2–5 times maximum per active day (typically at major checkpoints + end of day).
+- One solid end-of-day push is usually the most important.
+
+These rules exist specifically because this project uses Grok Build and GitHub pushes are not free.
+
+---
+
 # Session Reviews & Daily Notes
 
 ## 2026-05-30 — End of Day Review
