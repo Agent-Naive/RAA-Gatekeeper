@@ -570,7 +570,7 @@
         lastCertifySuccess = !certifyResult.is_error;
 
         if (certifyResult.is_error) {
-          certMsg = `UNCERTIFIED: ${certifyResult.verdict}`;
+          certMsg = certifyResult.verdict || "UNCERTIFIED";
         } else {
           certMsg = certifyResult.verdict || "CERTIFIED";
         }
