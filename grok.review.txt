@@ -82,6 +82,37 @@ The tool should remain local-first, read-only, and privacy-respecting. It is not
 
 ---
 
+## 2026-05-30 — Vault System Update (Later in Session)
+
+**Important Design Change:** Implemented proactive default vault creation on first run.
+
+### What Changed
+- Added new Rust command: `get_default_vault_path()`
+- On first launch (when no `raa_vault_root_path` exists in localStorage), the app now automatically:
+  1. Calls `get_default_vault_path` to get the resolved default location.
+  2. Creates `~/Documents/RAA_Vault` (via `create_vault_directory`).
+  3. Stores the **actual parent path** (e.g. `/Users/joe/Documents`) instead of leaving `vaultRootPath` empty.
+- "Set Default to ~/Documents/RAA_Vault" button now resolves the real path and stores it (instead of setting empty string).
+- Added a one-time session notification in Settings when the default vault is auto-created on first run.
+- `ensureVault()` and `loadLedgerData()` now behave more consistently because we prefer having a real path early.
+- Centralized `normalizeVaultPath()` helper is used everywhere.
+
+### Why This Was Done
+The previous "empty string = default" convention was causing confusing state when users mixed the "Set Default" button with manual Finder selection of the default folder. This led to Ledger not refreshing properly after restarts.
+
+By creating the folder on first run and always storing a concrete path, we eliminate most of the fragile dual-state logic (`""` vs real path).
+
+### Impact on Future Development
+- `vaultRootPath = ""` is now mostly a fallback / reset state rather than the normal "default" representation.
+- Most code paths can now assume `vaultRootPath` contains a real directory.
+- This should make Ledger loading, auditing, and path handling much more reliable.
+
+---
+
+**End of 2026-05-30 Vault Update**
+
+---
+
 ## How to Use This Document Going Forward
 
 1. Always read the **Permanent Knowledge** section first (top of file).
