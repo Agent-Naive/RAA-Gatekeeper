@@ -288,7 +288,7 @@
         '<span class="text-success">$1</span>',
       )
       .replace(
-        /(?<![A-Z])(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)(?![A-Z])/g,
+        /(?<![A-Z])(RAA VIOLATION DETECTED|VIOLATION DETECTED|VIOLATION FOUND|VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)(?![A-Z])/gi,
         '<span class="text-danger">$1</span>',
       );
   }
