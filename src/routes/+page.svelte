@@ -255,6 +255,7 @@
     file: string;
     hash: string;
     status?: VerificationStatus;
+    fromArchive?: boolean;
   };
 
   // Slice 5: transient copy feedback state
@@ -552,8 +553,16 @@
     try {
       selectedLedgerContent = await invoke("read_single_ledger_file", { fullPath: filePath });
       copiedHash = null;
+
+      // Detect origin so we can show honest icons for ZIP vs real disk files
+      const isArchiveLedger = /Type:\s*archive/i.test(selectedLedgerContent || "");
+
       // Populate recorded hashes for DNA verification
-      recordedHashes = extractRecordedHashes(selectedLedgerContent).map(h => ({ ...h, status: undefined }));
+      recordedHashes = extractRecordedHashes(selectedLedgerContent).map(h => ({
+        ...h,
+        status: undefined,
+        fromArchive: isArchiveLedger,
+      }));
 
       // Slice 4: Auto-verify if we have hashes that haven't been verified yet
       if (recordedHashes.length > 0 && !recordedHashes.some(h => h.status)) {
@@ -1047,9 +1056,17 @@
                               {:else if entry.status === 'mismatch'}
                                 <span class="dna-status mismatch" title="Current file content on disk does NOT match the hash recorded here — possible tampering, edit, or different version">❌</span>
                               {:else if entry.status === 'not_found'}
-                                <span class="dna-status not-found" title="File path no longer exists on disk or cannot be read">⚠️</span>
+                                {#if entry.fromArchive}
+                                  <span class="dna-status not-found" title="Recorded inside a ZIP archive. Individual files inside archives cannot be re-verified as loose disk paths (container support pending).">📦</span>
+                                {:else}
+                                  <span class="dna-status not-found" title="File path no longer exists on disk or cannot be read">⚠️</span>
+                                {/if}
                               {:else if entry.status === 'error'}
-                                <span class="dna-status not-found" title="Verification failed due to an unexpected error reading the file">⚠️</span>
+                                {#if entry.fromArchive}
+                                  <span class="dna-status not-found" title="Recorded inside a ZIP archive. Individual files inside archives cannot be re-verified as loose disk paths (container support pending).">📦</span>
+                                {:else}
+                                  <span class="dna-status not-found" title="Verification failed due to an unexpected error reading the file">⚠️</span>
+                                {/if}
                               {/if}
 
                               <button
