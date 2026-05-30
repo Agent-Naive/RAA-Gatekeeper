@@ -69,6 +69,12 @@
 
 ---
 
+## 🚨 Critical Bugs / High Priority Fixes
+
+- **[HIGH PRIORITY]** Certify (generate_manifest) always reports success even when multiple files are flagged as "RAA VIOLATION DETECTED". The overall operation and UI treat dirty folders as clean/passed. See `knownbug.ALLSAFE.txt` for full details and fix outline.
+
+---
+
 ## 📝 Known Polish Items
 
 - Settings layout: Model selector as dropdown + wider Base URL field
