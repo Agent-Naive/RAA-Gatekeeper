@@ -1,7 +1,7 @@
 # 🛡️ RAA Gatekeeper Roadmap
 
 **Current Status:** Active Development — Phase 3 + 4 Core Complete  
-**Last Major Update:** Vault propagation fixed + in-app roadmap viewer removed
+**Last Major Update:** Rich per-file AI analysis now persisted in Archive ledgers + Layout deep clean added to polish items
 
 ---
 
@@ -74,6 +74,7 @@
 - Settings layout: Model selector as dropdown + wider Base URL field
 - Remove duplicated vault-fallback blocks in UI
 - Make Integrity Guard reflect real vault path state instead of hardcoded true
+- Layout deep clean (global CSS consolidation, reduce inline styles, improve long-term maintainability and contributor friendliness)
 
 ---
 
