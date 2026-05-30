@@ -110,14 +110,16 @@
   let baseUrl = $state(localStorage.getItem("raa_base_url") || "");
   let modelName = $state(localStorage.getItem("raa_model_name") || "");
 
-  let rawVault = localStorage.getItem("raa_vault_root_path") || "";
-
-  // Normalize any previously stored value that accidentally included /RAA_Vault
-  if (rawVault.endsWith('/RAA_Vault') || rawVault.endsWith('\\RAA_Vault')) {
-    rawVault = rawVault.replace(/[\\/]RAA_Vault\/?$/, '');
+  // Centralized normalization helper - always returns a clean parent path or "" for default
+  function normalizeVaultPath(input: string): string {
+    if (!input) return "";
+    let p = input.trim();
+    p = p.replace(/[\\/]RAA_Vault\/?$/, '');
+    return p;
   }
 
-  let vaultRootPath = $state(rawVault);
+  const initialVault = normalizeVaultPath(localStorage.getItem("raa_vault_root_path") || "");
+  let vaultRootPath = $state(initialVault);
 
   let displayVaultPath = $derived(
     vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "~/Documents/RAA_Vault"
@@ -132,15 +134,16 @@
     localStorage.setItem("raa_base_url", baseUrl);
     localStorage.setItem("raa_model_name", modelName);
 
-    // Always persist a clean parent path (never with /RAA_Vault suffix)
-    const cleanRoot = (vaultRootPath || "").replace(/[\\/]RAA_Vault\/?$/, "");
+    // Persist using the same normalization
+    const cleanRoot = normalizeVaultPath(vaultRootPath || "");
     localStorage.setItem("raa_vault_root_path", cleanRoot);
   });
 
   async function selectVaultRootPath() {
     const selected = await open({ directory: true, multiple: false });
     if (selected && !Array.isArray(selected)) {
-      vaultRootPath = selected;
+      // Always normalize through the central function
+      vaultRootPath = normalizeVaultPath(selected);
     }
   }
 
@@ -536,6 +539,9 @@
   async function loadLedgerData() {
     isLoadingLedger = true;
     try {
+      // Ensure the vault directory exists before listing (important for default vault case)
+      await ensureVault();
+
       ledgerFiles = await invoke("list_ledger_files", { vaultRootPath });
       // Clear selection when loading fresh data
       selectedLedgerPath = "";
