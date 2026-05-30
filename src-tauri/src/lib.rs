@@ -466,22 +466,52 @@ async fn generate_manifest(
         })
         .collect();
 
+    const BUCKET_LIMIT: usize = 10000;
+
     let mut buckets = Vec::new();
     let mut current_bucket = Vec::new();
     let mut current_size = 0;
+
     for job in jobs {
         if job.hash == "ZIP" {
+            // ZIP files always get their own dedicated bucket
+            if !current_bucket.is_empty() {
+                buckets.push(current_bucket);
+                current_bucket = Vec::new();
+                current_size = 0;
+            }
             buckets.push(vec![job]);
             continue;
         }
-        if current_size + job.size > 10000 && !current_bucket.is_empty() {
+
+        // Large file that exceeds the entire bucket limit
+        if job.size > BUCKET_LIMIT {
+            // Flush current bucket first if it has anything
+            if !current_bucket.is_empty() {
+                buckets.push(current_bucket);
+                current_bucket = Vec::new();
+                current_size = 0;
+            }
+            // The large file will be split across multiple buckets
+            let size = job.size;
+            current_bucket.push(job);
+            current_size += size;
+            continue;
+        }
+
+        // Normal case: only add the file if it completely fits in the remaining space.
+        // This prevents "just fits and wastes the bucket" which leads to bad splits.
+        if current_size + job.size > BUCKET_LIMIT && !current_bucket.is_empty() {
             buckets.push(current_bucket);
             current_bucket = Vec::new();
             current_size = 0;
         }
-        current_size += job.size;
+
+        let size = job.size;
         current_bucket.push(job);
+        current_size += size;
     }
+
     if !current_bucket.is_empty() {
         buckets.push(current_bucket);
     }
@@ -490,14 +520,33 @@ async fn generate_manifest(
 
     for bucket in buckets {
         let mut batch_text = String::new();
-        for job in &bucket {
+
+        if bucket.len() == 1 {
+            // Single file in bucket — ask for focused analysis
+            let job = &bucket[0];
             batch_text.push_str(&format!(
-                "FILE: {} | HASH: {}\n{}\n",
+                "Analyze the following file for security issues, malicious code, or suspicious behavior.\n\n\
+                 FILE: {}\nHASH: {}\n\nCONTENT:\n{}\n",
                 job.path.display(),
                 job.hash,
                 job.content
             ));
+        } else {
+            // Multiple files — ask the model to analyze them individually when possible
+            batch_text.push_str(
+                "You are analyzing multiple files together for security and malicious behavior. \
+                 For each file, provide a clear individual assessment when possible.\n\n"
+            );
+            for job in &bucket {
+                batch_text.push_str(&format!(
+                    "FILE: {} | HASH: {}\n{}\n\n",
+                    job.path.display(),
+                    job.hash,
+                    job.content
+                ));
+            }
         }
+
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
             .await
             .unwrap_or(RAAReport {
