@@ -640,19 +640,27 @@ async fn generate_manifest(
                 }
                 (a.verdict.clone(), a.analysis.clone())
             } else {
-                // Fallback: model did not return valid structured output
+                // Fallback: model did not return valid structured JSON.
+                // Still respect the top-level is_error from this bucket's LLM response.
+                let fallback_verdict = if report.is_error {
+                    "VIOLATION FOUND (structured output failed to parse)".to_string()
+                } else {
+                    "CERTIFIED (structured output failed to parse)".to_string()
+                };
+
                 let fallback_text = if analyses.is_empty() {
                     format!(
-                        "[MODEL DID NOT RETURN STRUCTURED OUTPUT - RAW MODEL RESPONSE BELOW]\n\n{}",
+                        "[MODEL DID NOT RETURN STRUCTURED OUTPUT]\n\n{}",
                         report.reasoning.trim()
                     )
                 } else {
                     format!(
-                        "[STRUCTURED OUTPUT PARSING INCOMPLETE - Using raw model response]\n\n{}",
+                        "[STRUCTURED OUTPUT PARSING FAILED FOR THIS FILE]\n\n{}",
                         report.reasoning.trim()
                     )
                 };
-                (report.verdict.clone(), fallback_text)
+
+                (fallback_verdict, fallback_text)
             };
 
             let analysis_block = format!(
