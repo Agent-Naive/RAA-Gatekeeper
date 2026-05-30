@@ -1036,6 +1036,12 @@
                       class="ledger-row"
                       class:selected={selectedLedgerPath === file.path}
                       onclick={() => selectLedgerFile(file.path)}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          selectLedgerFile(file.path);
+                        }
+                      }}
                       role="button"
                       tabindex="0"
                     >
@@ -1283,15 +1289,6 @@
     Most global + reusable styles have been moved to src/app.css
     for better maintainability and to reduce bloat.
   */
-  .welcome-card {
-    background: #161616;
-    padding: 30px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    margin-top: 20px;
-    text-align: left;
-  }
-
   .welcome-intro {
     max-width: 700px;
     margin: 0 auto 24px;
@@ -1342,15 +1339,6 @@
     font-size: 14px; /* slightly larger to compensate for the font */
   }
 
-  .status-online {
-    color: #10b981;
-    font-weight: 600;
-  }
-
-  .status-offline {
-    color: #ef4444;
-    font-weight: 600;
-  }
   .tool-box {
     display: flex;
     gap: 10px;
@@ -1399,13 +1387,6 @@
     color: #666;
     flex-shrink: 0;
     padding-left: 12px;
-  }
-
-  .dna-note {
-    font-size: 10px;
-    color: #555;
-    margin-top: 6px;
-    font-style: italic;
   }
 
   .dna-status {
