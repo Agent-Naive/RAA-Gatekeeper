@@ -673,6 +673,7 @@
   font-size: 10px;
   color: #666;
   margin-top: 3px;
+  padding-right: 8px; /* match the right padding of .ledger-header and the filter input box for visual alignment */
 }
 
 /* Dual Pane Monitor (used in Archive and Certify tabs) */

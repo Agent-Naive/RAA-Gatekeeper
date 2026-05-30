@@ -1040,7 +1040,7 @@
                       tabindex="0"
                     >
                       <!-- Top line: icon + filename (max room for long names) -->
-                      <div class="flex items-center gap-4">
+                      <div class="flex items-center gap-4" style="padding-right: 8px;">
                         <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
                           {file.has_violation ? "🚨" : "🛡️"}
                         </span>
