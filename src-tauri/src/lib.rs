@@ -565,24 +565,25 @@ async fn generate_manifest(
                 ));
             }
 
-            batch_text.push_str(&format!(
+            batch_text.push_str(
                 "Now execute the process described above.\n\n\
                  REQUIRED OUTPUT FORMAT (YOU MUST FOLLOW EXACTLY):\n\
-                 Output ONLY a valid JSON array containing exactly {} objects.\n\
-                 Do not write any text, explanations, or markdown before or after the JSON.\n\n\
-                 JSON Schema (each object — USE THESE EXACT FIELD NAMES):\n\
-                 {{\n\
-                   \"file_number\": number,\n\
-                   \"file_path\": \"string - use the exact FILE PATH shown above\",\n\
+                 Output ONLY a valid JSON array. Nothing before it, nothing after it.\n\n\
+                 The array must contain one object per file in this batch, in the same order.\n\n\
+                 Each object MUST use these exact field names:\n\
+                 {\n\
+                   \"file_number\": number (starting from 1),\n\
+                   \"file_path\": \"exact FILE PATH string from the list above\",\n\
                    \"verdict\": \"CERTIFIED\" or \"VIOLATION FOUND\",\n\
-                   \"analysis\": \"string - your full independent analysis for ONLY this file\"\n\
-                 }}\n\n\
-                 Important:\n\
-                 - Do NOT rename the fields.\n\
-                 - Do NOT wrap the array in an object.\n\
-                 - Output ONLY the raw JSON array, nothing else.\n\n\
-                 Begin with FILE 1 and process all files sequentially as instructed."
-            , file_count));
+                   \"analysis\": \"your full, independent analysis for ONLY this file\"\n\
+                 }\n\n\
+                 Rules:\n\
+                 - Use the exact field names (file_number, file_path, verdict, analysis).\n\
+                 - Do not rename, add, or remove fields.\n\
+                 - Do not wrap the array in an object.\n\
+                 - Output ONLY the raw JSON array.\n\n\
+                 Begin processing FILE 1 now."
+            );
         }
 
         let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
@@ -600,10 +601,10 @@ async fn generate_manifest(
 
         // Try to parse structured JSON output from the model
         #[derive(serde::Deserialize, Debug)]
+        #[allow(dead_code)]
         struct FileAnalysis {
-            // Kept for schema matching and potential cross-validation
-            _file_number: u32,
-            _file_path: String,
+            file_number: u32,
+            file_path: String,
             verdict: String,
             analysis: String,
         }
@@ -629,18 +630,27 @@ async fn generate_manifest(
         // Write rich per-file analysis blocks
         for (i, job) in bucket.iter().enumerate() {
             let (verdict, analysis_text) = if let Some(a) = analyses.get(i) {
-                // Successfully got per-file data from model
+                // Successfully parsed per-file structured data from model
+                if a.file_path != job.path.display().to_string() {
+                    eprintln!(
+                        "Warning: Model returned mismatched file_path.\n  Expected: {}\n  Got: {}",
+                        job.path.display(),
+                        a.file_path
+                    );
+                }
                 (a.verdict.clone(), a.analysis.clone())
             } else {
-                // Fallback: model did not follow structured output
-                // Use the overall verdict but mark that structure wasn't followed
+                // Fallback: model did not return valid structured output
                 let fallback_text = if analyses.is_empty() {
                     format!(
-                        "[MODEL DID NOT RETURN STRUCTURED OUTPUT]\n\n{}",
+                        "[MODEL DID NOT RETURN STRUCTURED OUTPUT - RAW MODEL RESPONSE BELOW]\n\n{}",
                         report.reasoning.trim()
                     )
                 } else {
-                    report.reasoning.trim().to_string()
+                    format!(
+                        "[STRUCTURED OUTPUT PARSING INCOMPLETE - Using raw model response]\n\n{}",
+                        report.reasoning.trim()
+                    )
                 };
                 (report.verdict.clone(), fallback_text)
             };
