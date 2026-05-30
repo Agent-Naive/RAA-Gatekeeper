@@ -530,7 +530,7 @@
       >
     {/if}
     
-    <div class="timing-metrics" style="margin-left: auto; display: flex; align-items: center; font-size: 12px; color: #666; padding: 0 15px;">
+    <div class="timing-metrics flex items-center text-12">
       <span>LOCAL: {handoffTime}ms | ORACLE: {(totalTime / 1000).toFixed(2)}s</span>
     </div>
 
@@ -551,11 +551,30 @@
     <div class="view-wrapper">
       {#if activeTab === "welcome"}
         <section class="tool-view">
-          <h2>System Status: {isConfigured ? "ONLINE" : "STANDBY"}</h2>
-          <div class="welcome-card">
-          <p class="subtitle">
-            Forensic protocols armed. Logs in {displayVaultPath}
-          </p>
+          <div class="welcome-intro">
+            <p>
+              RAA-Gatekeeper is your on-demand guardian when working with files that interact with AI.
+            </p>
+            <p>
+              It acts as a careful, read-only auditor that you fully control. It never runs in the background and only audits your files when you explicitly trigger it. You use your own AI LLM to perform the auditing. Once audited, it helps you share your files safely and confidently with any AI agent.
+            </p>
+            <p>
+              Just like a trusted, well-documented building block in software, an RAA-Certified file gives AI clear, reliable context it can depend on.
+            </p>
+          </div>
+
+          <hr class="welcome-divider" />
+
+          <div class="shoutouts">
+            <p class="shoutouts-label">With thanks to</p>
+            <p class="shoutouts-names">
+              <span style="color: #396cd8; font-weight: 600;">Agent-Naive</span>, 
+              <span style="color: #ffab00; font-weight: 600;">Grok Build</span> & 
+              <span class="google-sans" style="font-weight: 600;"><span style="color: #4285F4;">G</span><span style="color: #EA4335;">e</span><span style="color: #FBBC05;">m</span><span style="color: #4285F4;">i</span><span style="color: #34A853;">n</span><span style="color: #EA4335;">i</span></span>
+            </p>
+            <p class="shoutouts-text">
+              for their tireless hard work while developing RAA Gatekeeper.
+            </p>
           </div>
         </section>
       {:else if activeTab === "audit"}
@@ -706,7 +725,7 @@
                 </div>
               </div>
             {:else}
-              <p style="color: #666; font-size: 11px; padding: 20px;">
+              <p class="text-11 muted">
                 Establishing secure hardware link...
               </p>
             {/if}
@@ -719,13 +738,13 @@
             <div class="settings-group-header">
               <h4 class="filter-title">🧠 AI Core Configuration</h4>
             </div>
-            <label style="display: block; margin-bottom: 12px;">
+            <label class="block mb-8">
               Model Name
-              <input type="text" bind:value={modelName} style="width: 280px;" />
+              <input type="text" bind:value={modelName} class="w-280" />
             </label>
-            <label style="display: block;">
+            <label class="block">
               Base URL
-              <input type="text" bind:value={baseUrl} style="width: 420px; font-size: 12px;" />
+              <input type="text" bind:value={baseUrl} class="w-420 text-12" />
             </label>
 
             <div class="filter-logic-zone">
@@ -754,86 +773,55 @@
               </div>
             </div>
 
-            <div
-              class="filter-logic-zone"
-              style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;"
-            >
+            <div class="filter-logic-zone">
               <h4 class="filter-title">📁 RAA Vault Location</h4>
               <p class="filter-hint">
                 The vault is always stored inside a folder named <strong>RAA_Vault</strong>. 
                 When no custom root is selected, it uses <code>~/Documents/RAA_Vault</code> by default (created automatically on first use).
               </p>
-              <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div class="flex-col gap-8">
                 <!-- Current Vault Status -->
-                <div
-                  class="folder-slot"
-                  style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
-                >
+                <div class="folder-slot">
                   {#if vaultRootPath && vaultRootPath !== "~/Documents"}
-                    <span
-                      class="path-text"
-                      style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                    >{displayVaultPath}</span>
-                    <button
-                      class="remove-btn"
-                      style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;"
-                      onclick={() => vaultRootPath = ""}
-                    >×</button>
+                    <span class="path-text text-11 text-ellipsis">{displayVaultPath}</span>
+                    <button class="remove-btn" onclick={() => vaultRootPath = ""}>×</button>
                   {:else}
-                    <span
-                      class="path-text"
-                      style="font-size: 11px; color: #4ade80;"
-                    >~/Documents/RAA_Vault <span style="color:#666; font-size:10px;">(default)</span></span>
+                    <span class="path-text text-11 default-vault-label">
+                      ~/Documents/RAA_Vault <span class="text-10 muted">(default)</span>
+                    </span>
                   {/if}
                 </div>
 
-                <button
-                  class="add-slot-btn"
-                  style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
-                  onclick={selectVaultRootPath}
-                >
+                <button class="add-slot-btn" onclick={selectVaultRootPath}>
                   + Select Root Directory for RAA_Vault
                 </button>
 
-                <button
-                  class="add-slot-btn"
-                  style="margin-top: 6px; background: transparent; border: 1px dashed #555; color: #777; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
-                  onclick={setDefaultVault}
-                >
+                <button class="add-slot-btn mt-6" onclick={setDefaultVault}>
                   Set Default to ~/Documents/RAA_Vault
                 </button>
               </div>
             </div>
 
-            <div
-              class="filter-logic-zone"
-              style="margin-top: 30px; border-top: 1px solid #222; padding-top: 20px;"
-            >
+            <div class="filter-logic-zone">
               <h4 class="filter-title">🕵️ Silent Watcher (Phase 4)</h4>
 
-              <div
-                class="watcher-controls"
-                style="display: flex; gap: 20px; align-items: center; margin-bottom: 20px;"
-              >
-                <label
-                  class="toggle-label"
-                  style="display: flex; align-items: center; gap: 10px; cursor: pointer;"
-                >
+              <div class="watcher-controls flex gap-20 items-center mb-20">
+                <label class="toggle-label flex items-center gap-8 cursor-pointer">
                   <input type="checkbox" bind:checked={watcherEnabled} />
                   Watcher Status:
-                  <span class={watcherEnabled ? "text-success" : "text-danger"}
-                    >{watcherEnabled ? "ARMED" : "OFF"}</span
-                  >
+                  <span class={watcherEnabled ? "text-success" : "text-danger"}>
+                    {watcherEnabled ? "ARMED" : "OFF"}
+                  </span>
                 </label>
 
-                <label style="font-size: 11px; color: #666;">
+                <label class="text-11 muted">
                   Depth Limit:
                   <input
                     type="number"
                     min="1"
                     max="5"
                     bind:value={watcherDepth}
-                    style="width: 50px; background: #111; border: 1px solid #333; color: white; margin-left: 5px; padding: 2px 5px;"
+                    class="input-sm w-50"
                   />
                 </label>
               </div>
@@ -842,31 +830,16 @@
                 <p class="filter-hint">
                   Monitored Folder Slots ({watcherFolders.length}/5):
                 </p>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div class="flex-col gap-8">
                   {#each watcherFolders as folder, i}
-                    <div
-                      class="folder-slot"
-                      style="background: #111; border: 1px solid #222; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;"
-                    >
-                      <span
-                        class="path-text"
-                        style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                        >{folder}</span
-                      >
-                      <button
-                        class="remove-btn"
-                        style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1;"
-                        onclick={() => removeWatcherFolder(i)}>×</button
-                      >
+                    <div class="folder-slot">
+                      <span class="path-text text-11 text-ellipsis">{folder}</span>
+                      <button class="remove-btn" onclick={() => removeWatcherFolder(i)}>×</button>
                     </div>
                   {/each}
 
                   {#if watcherFolders.length < 5}
-                    <button
-                      class="add-slot-btn"
-                      style="margin-top: 10px; background: transparent; border: 1px dashed #444; color: #888; padding: 12px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s;"
-                      onclick={addWatcherFolder}
-                    >
+                    <button class="add-slot-btn" onclick={addWatcherFolder}>
                       + Click to Add Target Folder Slot
                     </button>
                   {/if}
@@ -877,26 +850,26 @@
         </section>
         {:else if activeTab === "ledger"}
         <section class="tool-view">
-          <div style="margin-bottom: 8px;">
-            <h2 style="margin: 0;">📜 Forensic Ledger</h2>
-            <p class="subtitle" style="margin: 4px 0 0;">{ledgerFiles.length} reports in vault</p>
+          <div class="mb-8">
+            <h2 class="ledger-header-title">📜 Forensic Ledger</h2>
+            <p class="subtitle ledger-count">{ledgerFiles.length} reports in vault</p>
           </div>
 
-          <div style="display: flex; gap: 12px; margin-top: 12px;">
+          <div class="flex gap-12 mt-10">
             <!-- File List -->
-            <div style="flex: 0 0 320px; border: 1px solid #222; border-radius: 6px; background: #111; overflow: hidden; display: flex; flex-direction: column;">
-              <div style="padding: 8px 10px; border-bottom: 1px solid #222; background: #1a1a1a;">
+            <div class="ledger-panel ledger-panel-fixed">
+              <div class="ledger-header">
                 <input
                   type="text"
                   placeholder="Filter reports..."
                   bind:value={ledgerSearch}
-                  style="width: 100%; background: #222; border: 1px solid #333; color: #ddd; padding: 6px 8px; font-size: 12px; border-radius: 4px;"
+                  class="w-full text-12 ledger-search-input"
                 />
               </div>
 
-              <div style="flex: 1; overflow-y: auto; max-height: 420px;">
+              <div class="ledger-list-container">
                 {#if filteredLedgerFiles().length === 0}
-                  <div style="padding: 20px; color: #666; font-size: 12px; text-align: center;">
+                  <div class="ledger-empty">
                     No .raa reports found.
                   </div>
                 {:else}
@@ -906,15 +879,15 @@
                       class:selected={selectedLedgerPath === file.path}
                       onclick={() => selectLedgerFile(file.path)}
                     >
-                      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-                        <span style="font-size: 12px; color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                      <div class="flex justify-between items-center gap-8">
+                        <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
                           {file.has_violation ? "🚨" : "🛡️"}
                         </span>
-                        <span style="flex: 1; text-align: left; font-size: 11px; font-family: monospace; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <span class="flex-1 text-left text-11 monospace text-ellipsis ledger-item-name">
                           {file.name}
                         </span>
                       </div>
-                      <div style="font-size: 10px; color: #666; text-align: right; margin-top: 2px;">
+                      <div class="ledger-item-date">
                         {file.modified}
                       </div>
                     </button>
@@ -924,24 +897,24 @@
             </div>
 
             <!-- Detail Pane -->
-            <div style="flex: 1; border: 1px solid #222; border-radius: 6px; background: #111; padding: 12px; min-height: 420px; overflow-y: auto; font-size: 12px;">
+            <div class="ledger-detail ledger-panel">
               {#if !selectedLedgerPath}
-                <div style="color: #666; padding: 20px; text-align: center; font-style: italic;">
+                <div class="ledger-empty">
                   Select a report from the left to view its forensic details.
                 </div>
               {:else}
-                <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #222; font-size: 11px; color: #888;">
+                <div class="ledger-meta">
                   <strong>{selectedLedgerPath.split('/').pop()}</strong>
                 </div>
 
                 {#if selectedLedgerContent}
                   {#each getReportSegments(selectedLedgerContent) as segment}
                     <div class="ledger-incident-card">
-                      <pre class="raw-forensics" style="margin: 0;">{@html highlightSegment(segment)}</pre>
+                      <pre class="raw-forensics raw-forensics-no-margin">{@html highlightSegment(segment)}</pre>
                     </div>
                   {/each}
                 {:else}
-                  <div style="color: #666;">Loading report...</div>
+                  <div class="text-11 loading-text">Loading report...</div>
                 {/if}
               {/if}
             </div>
@@ -1022,6 +995,10 @@
   </main>
 
   <footer class="app-footer">
+    <div class="footer-left">
+      <span class="stat-item">© Agent-Naive 2026</span>
+    </div>
+
     <div class="footer-stats">
       <span class="stat-item"
         >LLM: <span class="brand-text">{modelName || "None"}</span></span
@@ -1029,7 +1006,7 @@
       <span class="stat-divider">|</span>
       <span class="stat-item"
         >Status: <span class={isConfigured ? "text-success" : "text-danger"}
-          >{isConfigured ? "Armed" : "Standby"}</span
+          >{isConfigured ? "Armed" : "Unarmed"}</span
         ></span
       >
     </div>
@@ -1037,105 +1014,11 @@
 </div>
 
 <style>
-  :root {
-    font-family: "Inter", sans-serif;
-    --primary: #396cd8;
-    --bg: #0a0a0a;
-    --nav: #161616;
-    --border: #262626;
-  }
-  .app-layout {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    background: var(--bg);
-    color: #f4f4f4;
-    overflow: hidden;
-  }
-  .top-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px 30px;
-    background: #000;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .logo-btn {
-    background: none;
-    border: none;
-    color: var(--primary);
-    font-weight: 900;
-    font-size: 14px;
-    letter-spacing: 2px;
-    cursor: pointer;
-    text-align: left;
-  }
-  .nav-bar {
-    display: flex;
-    gap: 8px;
-    padding: 8px 25px;
-    background: var(--nav);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .nav-bar button {
-    background: transparent;
-    border: none;
-    color: #888;
-    padding: 8px 16px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .nav-bar button.active {
-    color: var(--primary);
-    background: #222;
-    border-radius: 4px;
-  }
-  .dev-tab {
-    border: 1px solid #333 !important;
-    color: #ffab00 !important;
-  }
-  .progress-line {
-    height: 2px;
-    width: 100%;
-    position: relative;
-    overflow: hidden;
-    background: #222;
-    flex-shrink: 0;
-  }
-  .progress-line::after {
-    content: "";
-    position: absolute;
-    left: -50%;
-    height: 100%;
-    width: 50%;
-    background: var(--primary);
-    animation: slide 1.5s infinite;
-  }
-  @keyframes slide {
-    from {
-      left: -50%;
-    }
-    to {
-      left: 100%;
-    }
-  }
-  .content-pane {
-    flex: 1;
-    padding: 40px;
-    overflow-y: auto;
-    position: relative;
-  }
-  .view-wrapper {
-    max-width: 1000px;
-    margin: 0 auto;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-    padding-bottom: 150px;
-  }
+  /* 
+    Page-specific styles only.
+    Most global + reusable styles have been moved to src/app.css
+    for better maintainability and to reduce bloat.
+  */
   .welcome-card {
     background: #161616;
     padding: 30px;
@@ -1143,6 +1026,66 @@
     border: 1px solid var(--border);
     margin-top: 20px;
     text-align: left;
+  }
+
+  .welcome-intro {
+    max-width: 700px;
+    margin: 0 auto 24px;
+    line-height: 1.65;
+    font-size: 17px;
+    opacity: 0.92;
+    text-align: center;
+  }
+
+  .welcome-intro p {
+    margin-bottom: 14px;
+  }
+
+  .welcome-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px auto;
+    width: 60%;
+    max-width: 400px;
+  }
+
+  .shoutouts {
+    text-align: center;
+    margin-top: 20px;
+    opacity: 0.7;
+    line-height: 1.5;
+  }
+
+  .shoutouts-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 4px;
+    opacity: 0.6;
+  }
+
+  .shoutouts-names {
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+
+  .shoutouts-text {
+    font-size: 11px;
+  }
+
+  .google-sans {
+    font-family: "Google Sans", "Product Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; /* slightly larger to compensate for the font */
+  }
+
+  .status-online {
+    color: #10b981;
+    font-weight: 600;
+  }
+
+  .status-offline {
+    color: #ef4444;
+    font-weight: 600;
   }
   .tool-box {
     display: flex;
@@ -1158,463 +1101,10 @@
     border-radius: 6px;
     font-family: monospace;
   }
-  .primary-btn {
-    background: var(--primary);
-    color: #fff;
-    border: none;
-    padding: 12px 24px;
-    font-weight: 700;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  .dual-pane-monitor {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: 20px;
-    height: 300px;
-  }
-  .pane {
-    background: #161616;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    text-align: left;
-  }
-  h4 {
-    font-size: 10px;
-    color: #555;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-  .scroll-list {
-    overflow-y: auto;
-    flex: 1;
-    font-family: monospace;
-    font-size: 11px;
-  }
-  .file-entry {
-    padding: 4px 0;
-    border-bottom: 1px solid #222;
-  }
 
-  .glass-vault {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90%;
-    max-width: 850px;
-    max-height: 80vh;
-    background: #050505;
-    border: 2px solid #333;
-    box-shadow: 0 0 100px #000;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    border-radius: 8px;
-  }
-  .vault-header {
-    padding: 20px;
-    background: #000;
-    border-bottom: 1px solid #222;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-family: monospace;
-  }
-  .vault-header.error {
-    border-bottom: 2px solid #ef4444;
-  }
-  .v-badge {
-    color: #396cd8;
-    font-weight: bold;
-  }
-  .v-target {
-    opacity: 0.6;
-    font-size: 12px;
-  }
-  .vault-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 30px;
-    background: #080808;
-    text-align: left;
-  }
-  .raw-forensics {
-    color: #ffffff !important;
-    white-space: pre-wrap;
-    font-size: 14px;
-    line-height: 1.7;
-    margin: 0;
-    font-family: "Courier New", monospace;
-  }
-  .vault-close {
-    background: #111;
-    color: #444;
-    border: none;
-    padding: 15px;
-    cursor: pointer;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  .vault-close:hover {
-    color: #fff;
-    background: #222;
-  }
 
-  .forensic-status-overlay {
-    position: fixed;
-    bottom: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 800px;
-    z-index: 1000;
-    pointer-events: none;
-  }
-  :global(.report-card),
-  .mission-success-toast {
-    pointer-events: auto;
-    background: #1a1a1a;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    text-align: left;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-  }
-  :global(.report-card.error) {
-    border-left: 4px solid #ef4444;
-  }
-  :global(.badge) {
-    background: #333;
-    color: #fff;
-    padding: 8px 16px;
-    font-size: 10px;
-    font-weight: 800;
-    display: flex;
-    align-items: center;
-  }
-  :global(.target-label) {
-    margin-left: 10px;
-    opacity: 0.7;
-    font-weight: 400;
-    text-transform: none;
-  }
-  :global(.reasoning-container) {
-    max-height: 450px;
-    overflow-y: auto;
-    padding: 10px;
-  }
-  :global(.segment-card) {
-    background: #111;
-    margin-bottom: 10px;
-    padding: 15px;
-    border-radius: 6px;
-    border-left: 3px solid #10b981;
-  }
-  :global(.segment-card.segment-error) {
-    border-left-color: #ef4444;
-  }
-  :global(.segment-content) {
-    white-space: pre-wrap;
-    font-size: 12px;
-    color: #ccc;
-    margin: 0;
-    line-height: 1.5;
-    font-family: monospace;
-  }
-  :global(.clear-btn) {
-    background: transparent;
-    border: 1px solid #333;
-    color: #666;
-    padding: 8px 16px;
-    margin: 0 20px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
 
-  .mission-success-toast {
-    background: #000;
-    border: 1px solid var(--primary);
-    color: var(--primary);
-    padding: 15px 25px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .integrity-grid {
-    display: grid;
-    gap: 15px;
-  }
-  .check-item {
-    display: flex;
-    justify-content: space-between;
-    border-bottom: 1px solid #222;
-    padding-bottom: 10px;
-  }
-  .app-footer {
-    padding: 12px 30px;
-    background: #000;
-    border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: flex-end;
-    font-size: 10px;
-    color: #444;
-    flex-shrink: 0;
-  }
-  .footer-stats {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-  }
-  .stat-divider {
-    opacity: 0.2;
-  }
-  .brand-text {
-    color: var(--primary);
-    font-weight: bold;
-  }
-  .terminal-input {
-    text-transform: none !important;
-    font-family: monospace;
-  }
-  .version-tag {
-    font-size: 10px;
-    opacity: 0.4;
-  }
-  .muted {
-    opacity: 0.4;
-  }
-  .subtitle {
-    font-size: 14px;
-    opacity: 0.6;
-  }
 
-  :global(.path-text) {
-    color: #396cd8;
-    font-weight: bold;
-  }
-  :global(.text-success) {
-    color: #10b981 !important;
-    font-weight: bold;
-  }
-  :global(.text-danger) {
-    color: #ef4444 !important;
-    font-weight: bold;
-  }
 
-  .filter-logic-zone {
-    margin-top: 30px;
-    border-top: 1px solid var(--border);
-    padding-top: 20px;
-  }
-  .filter-title {
-    margin-bottom: 10px;
-    color: var(--primary);
-    font-size: 12px;
-    text-transform: uppercase;
-  }
-  .filter-hint {
-    font-size: 11px;
-    opacity: 0.5;
-    margin-bottom: 15px;
-  }
-  .extension-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .ext-chip {
-    background: #161616;
-    color: #555;
-    border: 1px solid #333;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-family: monospace;
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .ext-chip.active {
-    background: var(--primary);
-    color: #fff;
-    border-color: var(--primary);
-  }
 
-  .settings-group-header {
-    margin-bottom: 15px;
-    border-bottom: 1px solid #222;
-    padding-bottom: 10px;
-  }
-
-  .watcher-toast {
-    position: fixed;
-    bottom: 30px;
-    right: 30px;
-    background: #000;
-    border: 1px solid var(--primary);
-    border-radius: 8px;
-    padding: 15px;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    z-index: 10000;
-    box-shadow: 0 0 20px rgba(57, 108, 216, 0.4);
-    animation: slide-in 0.3s ease-out;
-  }
-  .toast-icon {
-    font-size: 24px;
-  }
-  .toast-title {
-    font-size: 11px;
-    font-weight: bold;
-    color: var(--primary);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  .toast-path {
-    font-size: 13px;
-    color: #fff;
-    margin-top: 2px;
-  }
-
-  .alert-hub-btn {
-    position: relative;
-    margin-left: auto;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1.2rem;
-    padding: 5px 10px;
-  }
-
-  .alert-badge {
-    position: absolute;
-    top: -2px;
-    right: -2px;
-    background: #ef4444;
-    color: white;
-    font-size: 9px;
-    font-weight: bold;
-    padding: 2px 5px;
-    border-radius: 10px;
-    line-height: 1;
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-    pointer-events: none;
-  }
-
-  .alert-dropdown {
-    position: fixed;
-    top: 65px;
-    right: 20px;
-    width: 300px;
-    background: #000;
-    border: 1px solid var(--primary);
-    border-radius: 8px;
-    padding: 15px;
-    z-index: 10000;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9);
-  }
-  .dropdown-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-  }
-  .dropdown-header h4 {
-    margin: 0;
-    font-size: 11px;
-    color: var(--primary);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-  }
-  .close-x {
-    background: none;
-    border: none;
-    color: #444;
-    cursor: pointer;
-    font-size: 18px;
-  }
-  .alert-list {
-    max-height: 300px;
-    overflow-y: auto;
-  }
-  .alert-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid #111;
-  }
-  .file-name {
-    font-size: 11px;
-    color: #fff;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 190px;
-  }
-  .audit-link {
-    background: var(--primary);
-    border: none;
-    color: white;
-    font-size: 10px;
-    padding: 4px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-  }
-  .clear-btn {
-    width: 100%;
-    margin-top: 15px;
-    background: #111;
-    border: 1px solid #222;
-    color: #666;
-    font-size: 10px;
-    padding: 6px;
-    cursor: pointer;
-    border-radius: 4px;
-  }
-  .clear-btn:hover {
-    color: #ef4444;
-    border-color: #ef4444;
-  }
-  .subtitle {
-    font-size: 14px;
-    opacity: 0.6;
-    position: relative;
-    display: inline-block;
-  }
-
-  /* === New Ledger Browser Styles === */
-  .ledger-row {
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid #1f1f1f;
-    padding: 8px 10px;
-    cursor: pointer;
-    transition: background 0.1s;
-  }
-  .ledger-row:hover {
-    background: #1a1a1a;
-  }
-  .ledger-row.selected {
-    background: #222;
-    border-left: 3px solid var(--primary);
-  }
-  .ledger-incident-card {
-    background: #1a1a1a;
-    border: 1px solid #222;
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 10px;
-  }
 </style>
-
-// End of File
