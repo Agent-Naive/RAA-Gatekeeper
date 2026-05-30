@@ -167,6 +167,8 @@
   let ledgerFiles = $state<any[]>([]);
   let selectedLedgerPath = $state("");
   let selectedLedgerContent = $state("");
+  let recordedHashes = $state<RecordedHash[]>([]);
+
   let ledgerSearch = $state("");
   let isLoadingLedger = $state(false);
   let integrityReport = $state<any>(null);
@@ -245,6 +247,94 @@
         /(VIOLATION|THREAT|DANGER|MALICIOUS|DETECTED)/g,
         '<span class="text-danger">$1</span>',
       );
+  }
+
+  type VerificationStatus = 'pending' | 'match' | 'mismatch' | 'not_found' | 'error';
+
+  type RecordedHash = {
+    file: string;
+    hash: string;
+    status?: VerificationStatus;
+  };
+
+  // Slice 5: transient copy feedback state
+  let copiedHash = $state<string | null>(null);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function extractRecordedHashes(text: string): RecordedHash[] {
+    if (!text) return [];
+
+    const regex = /File:\s*(.+?)\s*\|\s*Hash:\s*([a-f0-9]{64})/gi;
+    const matches: RecordedHash[] = [];
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      matches.push({
+        file: match[1].trim(),
+        hash: match[2],
+      });
+    }
+
+    return matches;
+  }
+
+  function getDnaSummary(hashes: RecordedHash[]) {
+    const total = hashes.length;
+    const matches = hashes.filter(h => h.status === 'match').length;
+    const mismatches = hashes.filter(h => h.status === 'mismatch').length;
+    const missing = hashes.filter(h => h.status === 'not_found').length;
+    const errors = hashes.filter(h => h.status === 'error').length;
+    const pending = hashes.filter(h => h.status === 'pending').length;
+    return { total, matches, mismatches, missing, errors, pending };
+  }
+
+  async function verifyRecordedHashes() {
+    for (let i = 0; i < recordedHashes.length; i++) {
+      const entry = recordedHashes[i];
+      recordedHashes[i] = { ...entry, status: 'pending' };
+      // Force reactivity
+      recordedHashes = [...recordedHashes];
+
+      try {
+        const currentHash: string = await invoke("hash_file", { path: entry.file });
+        const newStatus: VerificationStatus = currentHash === entry.hash ? 'match' : 'mismatch';
+        recordedHashes[i] = { ...entry, status: newStatus };
+      } catch (e) {
+        // File probably doesn't exist or can't be read
+        recordedHashes[i] = { ...entry, status: 'not_found' };
+      }
+      recordedHashes = [...recordedHashes];
+    }
+  }
+
+  async function verifySingleHash(index: number) {
+    if (index < 0 || index >= recordedHashes.length) return;
+
+    const entry = recordedHashes[index];
+    recordedHashes[index] = { ...entry, status: 'pending' };
+    recordedHashes = [...recordedHashes];
+
+    try {
+      const currentHash: string = await invoke("hash_file", { path: entry.file });
+      const newStatus: VerificationStatus = currentHash === entry.hash ? 'match' : 'mismatch';
+      recordedHashes[index] = { ...entry, status: newStatus };
+    } catch (e) {
+      recordedHashes[index] = { ...entry, status: 'not_found' };
+    }
+    recordedHashes = [...recordedHashes];
+  }
+
+  function copyHash(hash: string) {
+    navigator.clipboard.writeText(hash).then(() => {
+      if (copyTimeout) clearTimeout(copyTimeout);
+      copiedHash = hash;
+      copyTimeout = setTimeout(() => {
+        copiedHash = null;
+      }, 1200);
+    }).catch(() => {
+      // Fallback for older environments
+      alert('Copied: ' + hash);
+    });
   }
 
   async function addWatcherFolder() {
@@ -442,6 +532,8 @@
       // Clear selection when loading fresh data
       selectedLedgerPath = "";
       selectedLedgerContent = "";
+      recordedHashes = [];
+      copiedHash = null;
     } catch (e) {
       ledgerFiles = [];
       console.error("Failed to list ledger files:", e);
@@ -459,8 +551,19 @@
     selectedLedgerPath = filePath;
     try {
       selectedLedgerContent = await invoke("read_single_ledger_file", { fullPath: filePath });
+      copiedHash = null;
+      // Populate recorded hashes for DNA verification
+      recordedHashes = extractRecordedHashes(selectedLedgerContent).map(h => ({ ...h, status: undefined }));
+
+      // Slice 4: Auto-verify if we have hashes that haven't been verified yet
+      if (recordedHashes.length > 0 && !recordedHashes.some(h => h.status)) {
+        // Fire and forget - user can still interact
+        verifyRecordedHashes();
+      }
     } catch (e) {
       selectedLedgerContent = `Error loading file: ${e}`;
+      recordedHashes = [];
+      copiedHash = null;
     }
   }
 
@@ -913,6 +1016,70 @@
                       <pre class="raw-forensics raw-forensics-no-margin">{@html highlightSegment(segment)}</pre>
                     </div>
                   {/each}
+
+                  {#if recordedHashes.length > 0}
+                    {@const summary = getDnaSummary(recordedHashes)}
+                    <div class="dna-section">
+                      <div class="dna-header">
+                        <span>Recorded DNA Hashes</span>
+                        <span class="dna-count">
+                          {summary.total} hashes
+                          {#if summary.pending > 0}
+                            · verifying…
+                          {:else}
+                            · {summary.matches} ✅ · {summary.mismatches} ❌ · {summary.missing} ⚠️
+                            {#if summary.errors > 0}· {summary.errors} error{/if}
+                          {/if}
+                        </span>
+                      </div>
+
+                      <div class="dna-list">
+                        {#each recordedHashes as entry, i}
+                          <div class="dna-entry">
+                            <span class="dna-file text-ellipsis">{entry.file}</span>
+                            <span class="dna-hash">{entry.hash.slice(0, 12)}…</span>
+
+                            <div class="dna-actions">
+                              {#if entry.status === 'pending'}
+                                <span class="dna-status pending" title="Computing SHA-256 of file on disk right now...">⏳</span>
+                              {:else if entry.status === 'match'}
+                                <span class="dna-status match" title="File on disk matches the exact hash recorded in this ledger entry">✅</span>
+                              {:else if entry.status === 'mismatch'}
+                                <span class="dna-status mismatch" title="Current file content on disk does NOT match the hash recorded here — possible tampering, edit, or different version">❌</span>
+                              {:else if entry.status === 'not_found'}
+                                <span class="dna-status not-found" title="File path no longer exists on disk or cannot be read">⚠️</span>
+                              {:else if entry.status === 'error'}
+                                <span class="dna-status not-found" title="Verification failed due to an unexpected error reading the file">⚠️</span>
+                              {/if}
+
+                              <button
+                                class="dna-copy-btn"
+                                class:copied={copiedHash === entry.hash}
+                                onclick={() => copyHash(entry.hash)}
+                                title="Copy full 64-char SHA-256 hash to clipboard"
+                              >
+                                {copiedHash === entry.hash ? '✓' : '📋'}
+                              </button>
+
+                              {#if !entry.status || entry.status === 'not_found' || entry.status === 'error'}
+                                <button class="dna-verify-single" onclick={() => verifySingleHash(i)} title="Re-compute SHA-256 of this file now and compare against the ledger record">
+                                  Verify
+                                </button>
+                              {:else}
+                                <button class="dna-verify-single" onclick={() => verifySingleHash(i)} title="Re-verify this file against current disk contents">
+                                  ⟳
+                                </button>
+                              {/if}
+                            </div>
+                          </div>
+                        {/each}
+                      </div>
+
+                      <button class="dna-verify-btn" onclick={verifyRecordedHashes} disabled={recordedHashes.some(h => h.status === 'pending')}>
+                        {recordedHashes.some(h => h.status === 'pending') ? 'Verifying...' : 'Verify All'}
+                      </button>
+                    </div>
+                  {/if}
                 {:else}
                   <div class="text-11 loading-text">Loading report...</div>
                 {/if}
@@ -1107,4 +1274,134 @@
 
 
 
+  .dna-section {
+    margin-top: 16px;
+    border-top: 1px solid #222;
+    padding-top: 12px;
+  }
+
+  .dna-list {
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  .dna-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 3px 0;
+    border-bottom: 1px solid #1a1a1a;
+  }
+
+  .dna-file {
+    flex: 1;
+    min-width: 0;
+    color: #ccc;
+  }
+
+  .dna-hash {
+    color: #666;
+    flex-shrink: 0;
+    padding-left: 12px;
+  }
+
+  .dna-note {
+    font-size: 10px;
+    color: #555;
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  .dna-status {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 8px;
+    flex-shrink: 0;
+  }
+
+  .dna-status.match {
+    background: #052e16;
+    color: #4ade80;
+  }
+
+  .dna-status.mismatch {
+    background: #450a0a;
+    color: #f87171;
+  }
+
+  .dna-status.not-found {
+    background: #3f2e00;
+    color: #fbbf24;
+  }
+
+  .dna-verify-btn {
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    width: 100%;
+  }
+
+  .dna-verify-btn:hover:not(:disabled) {
+    border-color: #666;
+    color: #ddd;
+  }
+
+  .dna-verify-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .dna-verify-single {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .dna-verify-single:hover {
+    border-color: #666;
+    color: #ccc;
+  }
+
+  .dna-status.pending {
+    background: #1f2937;
+    color: #9ca3af;
+  }
+
+  .dna-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .dna-copy-btn {
+    background: transparent;
+    border: 1px solid #444;
+    color: #888;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .dna-copy-btn:hover {
+    border-color: #666;
+    color: #ccc;
+  }
+
+  .dna-copy-btn.copied {
+    color: #4ade80;
+    border-color: #4ade80;
+  }
 </style>
