@@ -1039,15 +1039,19 @@
                       role="button"
                       tabindex="0"
                     >
-                      <div class="flex justify-between items-center gap-4">
+                      <!-- Top line: icon + filename (max room for long names) -->
+                      <div class="flex items-center gap-4">
                         <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
                           {file.has_violation ? "🚨" : "🛡️"}
                         </span>
                         <span class="flex-1 text-left text-11 monospace text-ellipsis ledger-item-name">
                           {file.name}
                         </span>
+                      </div>
 
-                        <!-- Delete button -->
+                      <!-- Bottom line: date (left) + trashcan (right) -->
+                      <div class="ledger-item-date">
+                        <span>{file.modified}</span>
                         <button
                           class="ledger-delete-btn"
                           onclick={(e) => { e.stopPropagation(); requestDeleteLedger(file); }}
@@ -1055,9 +1059,6 @@
                         >
                           🗑
                         </button>
-                      </div>
-                      <div class="ledger-item-date">
-                        {file.modified}
                       </div>
                     </div>
                   {/each}
