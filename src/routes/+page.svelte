@@ -200,6 +200,7 @@
     is_error: false,
   });
   let certMsg = $state("");
+  let lastCertifySuccess = $state(true);
   let commandInput = $state("");
   let ledgerContent = $state(""); // legacy raw view (kept for now)
   let ledgerFiles = $state<any[]>([]);
@@ -257,6 +258,7 @@
       is_error: false,
     };
     certMsg = "";
+    lastCertifySuccess = true;
     activeFiles = [];
     skippedFiles = [];
   }
@@ -555,6 +557,8 @@
         });
 
         // Handle the new richer return type
+        lastCertifySuccess = !certifyResult.is_error;
+
         if (certifyResult.is_error) {
           certMsg = `UNCERTIFIED: ${certifyResult.verdict}`;
         } else {
@@ -1246,9 +1250,9 @@
       
       {#if certMsg}
         <div class="forensic-status-overlay">
-          <div class="mission-success-toast">
+          <div class="mission-success-toast" class:error={!lastCertifySuccess}>
             <span>{certMsg}</span>
-            <button class="toast-close" onclick={() => (certMsg = "")}>×</button
+            <button class="toast-close" onclick={() => { certMsg = ""; lastCertifySuccess = true; }}>×</button
             >
           </div>
         </div>
