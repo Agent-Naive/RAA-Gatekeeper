@@ -173,6 +173,10 @@
   let isLoadingLedger = $state(false);
   let integrityReport = $state<any>(null);
 
+  // Delete confirmation state
+  let deleteConfirmPath = $state<string | null>(null);
+  let deleteConfirmName = $state<string | null>(null);
+
   let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
   let activeFiles = $state<string[]>([]);
   let skippedFiles = $state<string[]>([]);
@@ -574,6 +578,48 @@
       recordedHashes = [];
       copiedHash = null;
     }
+  }
+
+  // --- Delete Ledger File with Confirmation ---
+  function requestDeleteLedger(file: any) {
+    // Prevent the row click from also selecting the file
+    deleteConfirmPath = file.path;
+    deleteConfirmName = file.name;
+  }
+
+  async function confirmDeleteLedger() {
+    if (!deleteConfirmPath) return;
+
+    const pathToDelete = deleteConfirmPath;
+    const wasSelected = selectedLedgerPath === pathToDelete;
+
+    try {
+      await invoke("delete_ledger_file", {
+        fullPath: pathToDelete,
+        vaultRootPath,
+      });
+
+      // Refresh the list
+      await loadLedgerData();
+
+      // If the deleted file was currently selected, clear the detail view
+      if (wasSelected) {
+        selectedLedgerPath = "";
+        selectedLedgerContent = "";
+        recordedHashes = [];
+      }
+    } catch (e) {
+      // Simple error feedback
+      alert(`Failed to delete report: ${e}`);
+    } finally {
+      deleteConfirmPath = null;
+      deleteConfirmName = null;
+    }
+  }
+
+  function cancelDeleteLedger() {
+    deleteConfirmPath = null;
+    deleteConfirmName = null;
   }
 
   function filteredLedgerFiles() {
@@ -986,10 +1032,12 @@
                   </div>
                 {:else}
                   {#each filteredLedgerFiles() as file}
-                    <button
+                    <div
                       class="ledger-row"
                       class:selected={selectedLedgerPath === file.path}
                       onclick={() => selectLedgerFile(file.path)}
+                      role="button"
+                      tabindex="0"
                     >
                       <div class="flex justify-between items-center gap-8">
                         <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
@@ -998,11 +1046,20 @@
                         <span class="flex-1 text-left text-11 monospace text-ellipsis ledger-item-name">
                           {file.name}
                         </span>
+
+                        <!-- Delete button -->
+                        <button
+                          class="ledger-delete-btn"
+                          onclick={(e) => { e.stopPropagation(); requestDeleteLedger(file); }}
+                          title="Delete this report"
+                        >
+                          🗑
+                        </button>
                       </div>
                       <div class="ledger-item-date">
                         {file.modified}
                       </div>
-                    </button>
+                    </div>
                   {/each}
                 {/if}
               </div>
@@ -1135,6 +1192,28 @@
             <span>{certMsg}</span>
             <button class="toast-close" onclick={() => (certMsg = "")}>×</button
             >
+          </div>
+        </div>
+      {/if}
+
+      <!-- Delete Confirmation Modal -->
+      {#if deleteConfirmPath}
+        <div class="delete-confirm-overlay">
+          <div class="delete-confirm-dialog">
+            <div class="delete-confirm-title">Delete Report?</div>
+            <div class="delete-confirm-message">
+              Are you sure you want to permanently delete<br />
+              <strong>{deleteConfirmName}</strong>?<br />
+              <span class="delete-warning">This action cannot be undone.</span>
+            </div>
+            <div class="delete-confirm-actions">
+              <button class="delete-btn cancel" onclick={cancelDeleteLedger}>
+                Cancel
+              </button>
+              <button class="delete-btn confirm" onclick={confirmDeleteLedger}>
+                Yes, Delete
+              </button>
+            </div>
           </div>
         </div>
       {/if}

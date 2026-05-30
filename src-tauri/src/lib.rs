@@ -614,6 +614,29 @@ async fn read_single_ledger_file(full_path: String) -> Result<String, String> {
     fs::read_to_string(&full_path).map_err(|e| e.to_string())
 }
 
+/// Safely deletes a .raa ledger file. Only allows deletion inside the current vault root.
+#[tauri::command]
+async fn delete_ledger_file(full_path: String, vault_root_path: String) -> Result<(), String> {
+    let audit_root = resolve_vault_root(&vault_root_path);
+    let target_path = std::path::PathBuf::from(&full_path);
+
+    // Security: prevent deleting files outside the vault
+    if !target_path.starts_with(&audit_root) {
+        return Err("Delete not allowed: file is outside the RAA vault".into());
+    }
+
+    if !target_path.exists() {
+        return Err("File no longer exists".into());
+    }
+
+    // Extra safety: only allow .raa files
+    if target_path.extension().and_then(|e| e.to_str()) != Some("raa") {
+        return Err("Only .raa files can be deleted through this command".into());
+    }
+
+    fs::remove_file(&target_path).map_err(|e| format!("Failed to delete file: {}", e))
+}
+
 #[tauri::command]
 async fn toggle_watcher(
     window: tauri::Window,
@@ -683,6 +706,7 @@ pub fn run() {
             create_vault_directory,
             list_ledger_files,
             read_single_ledger_file,
+            delete_ledger_file,
             hash_file
         ])
         .run(tauri::generate_context!())
