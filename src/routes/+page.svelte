@@ -121,6 +121,9 @@
   const initialVault = normalizeVaultPath(localStorage.getItem("raa_vault_root_path") || "");
   let vaultRootPath = $state(initialVault);
 
+  // One-time flag for first-run default vault creation notification
+  let defaultVaultInitializedThisSession = $state(false);
+
   let displayVaultPath = $derived(
     vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "~/Documents/RAA_Vault"
   );
@@ -129,6 +132,33 @@
     baseUrl.trim().length > 0 && modelName.trim().length > 0,
   );
   let isDev = $state(false);
+
+  // First-run initialization: create and store the real default vault path
+  $effect(() => {
+    const hasStoredVault = localStorage.getItem("raa_vault_root_path");
+
+    if (!hasStoredVault && !vaultRootPath) {
+      initializeDefaultVaultOnFirstRun();
+    }
+  });
+
+  async function initializeDefaultVaultOnFirstRun() {
+    try {
+      const defaultPath: string = await invoke("get_default_vault_path");
+      await invoke("create_vault_directory", { rootPath: defaultPath });
+
+      const parent = normalizeVaultPath(defaultPath);
+      vaultRootPath = parent;
+
+      // Persist immediately
+      localStorage.setItem("raa_vault_root_path", parent);
+
+      defaultVaultInitializedThisSession = true;
+      console.log("Default vault auto-created on first run:", parent);
+    } catch (err) {
+      console.error("Failed to auto-create default vault on first run:", err);
+    }
+  }
 
   $effect(() => {
     localStorage.setItem("raa_base_url", baseUrl);
@@ -149,13 +179,15 @@
 
   async function setDefaultVault() {
     try {
-      // Explicitly ensure the true default location ~/Documents/RAA_Vault is created
-      await invoke("create_vault_directory", { rootPath: "" });
-      // Keep vaultRootPath empty to represent "using the built-in default"
-      vaultRootPath = "";
-      console.log("Default vault location activated: ~/Documents/RAA_Vault");
+      const defaultPath: string = await invoke("get_default_vault_path");
+      await invoke("create_vault_directory", { rootPath: defaultPath });
+
+      const parent = normalizeVaultPath(defaultPath);
+      vaultRootPath = parent;
+
+      console.log("Default vault location reset to:", parent);
     } catch (err) {
-      console.error("Failed to create default vault:", err);
+      console.error("Failed to reset to default vault:", err);
       vaultRootPath = "";
     }
   }
@@ -361,15 +393,12 @@
   }
 
   async function ensureVault() {
-    // Only ensure directory creation if the user has explicitly set a custom root.
-    // On first run (empty), leave vaultRootPath empty — the default ~/Documents/RAA_Vault
-    // will be used and created automatically inside the Rust logging functions.
-    if (vaultRootPath && vaultRootPath !== "~/Documents") {
-      try {
-        await invoke("create_vault_directory", { rootPath: vaultRootPath });
-      } catch (err) {
-        console.error("Failed to ensure custom vault directory:", err);
-      }
+    // Ensure the vault directory exists.
+    // We now prefer having a real path, but still support the empty string for default.
+    try {
+      await invoke("create_vault_directory", { rootPath: vaultRootPath });
+    } catch (err) {
+      console.error("Failed to ensure vault directory:", err);
     }
   }
 
@@ -967,6 +996,12 @@
                   Set Default to ~/Documents/RAA_Vault
                 </button>
               </div>
+
+              {#if defaultVaultInitializedThisSession}
+                <p class="text-11 text-success mt-2">
+                  ✓ Default vault folder was created automatically.
+                </p>
+              {/if}
             </div>
 
             <div class="filter-logic-zone">

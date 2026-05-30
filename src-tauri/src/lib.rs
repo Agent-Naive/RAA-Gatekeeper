@@ -561,6 +561,13 @@ async fn create_vault_directory(root_path: String) -> Result<String, String> {
     Ok(audit_root.to_string_lossy().into_owned())
 }
 
+#[tauri::command]
+async fn get_default_vault_path() -> Result<String, String> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".into());
+    let default_path = PathBuf::from(home).join("Documents").join("RAA_Vault");
+    Ok(default_path.to_string_lossy().into_owned())
+}
+
 // --- LEDGER BROWSER COMMANDS ---
 #[tauri::command]
 async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, String> {
@@ -704,6 +711,7 @@ pub fn run() {
             check_integrity,
             toggle_watcher,
             create_vault_directory,
+            get_default_vault_path,
             list_ledger_files,
             read_single_ledger_file,
             delete_ledger_file,
