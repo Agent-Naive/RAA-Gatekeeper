@@ -78,6 +78,7 @@
 ## 📝 Known Polish Items
 
 - Settings layout: Model selector as dropdown + wider Base URL field
+- **Mandatory UI Improvement (Deferred)**: Reorganize the entire Settings page into a button-driven / section-based layout (e.g. buttons or tabs for “AI Configuration”, “Silent Watcher”, “Vault & Paths”, etc.) instead of one long scrolling page. Goal is to eliminate excessive scrolling, especially painful on macOS Magic Keyboard. This is considered mandatory for better UX.
 - Remove duplicated vault-fallback blocks in UI
 - Make Integrity Guard reflect real vault path state instead of hardcoded true
 - Layout deep clean (global CSS consolidation, reduce inline styles, improve long-term maintainability and contributor friendliness)

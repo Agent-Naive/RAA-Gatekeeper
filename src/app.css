@@ -242,6 +242,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   font-size: 12px;
   max-width: 100%;
+  min-width: 300px; /* starting minimum width, can grow with content */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -502,6 +503,7 @@
   font-size: 11px;
   white-space: nowrap;
   max-width: 100%;
+  min-width: 300px; /* starting minimum width, can grow with content */
   overflow: hidden;
 
   /* Subtle popup animation */
