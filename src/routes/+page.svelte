@@ -114,7 +114,8 @@
   function normalizeVaultPath(input: string): string {
     if (!input) return "";
     let p = input.trim();
-    p = p.replace(/[\\/]RAA_Vault\/?$/, '');
+    // Support both old underscore and new hyphen versions during transition
+    p = p.replace(/[\\/]RAA[-_]Vault\/?$/, '');
     return p;
   }
 
@@ -125,7 +126,7 @@
   let defaultVaultInitializedThisSession = $state(false);
 
   let displayVaultPath = $derived(
-    vaultRootPath ? `${vaultRootPath}/RAA_Vault` : "~/Documents/RAA_Vault"
+    vaultRootPath ? `${vaultRootPath}/RAA-Vault` : "~/Documents/RAA-Vault"
   );
 
   let isConfigured = $derived(
@@ -218,6 +219,43 @@
 
   let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
   let activeFiles = $state<string[]>([]);
+
+  // =============================================
+  // TEMPORARY SKIPPED FILES UI HOLDING PATTERN
+  //
+  // User directive (2025-10 context):
+  // "trust me moving this to the bottom is purely temporary
+  // and a way to save the current file skipped code intact
+  // for a move later. once we make these changes i will
+  // explain step 2 and then step 3"
+  //
+  // Exact requested layout for Certify (LIVE/SKIPPED boxes):
+  // - Keep two side-by-side framed boxes (visual format preserved)
+  // - Left pane: "📡 Audited" (both Archive and Certify tabs) — unchanged,
+  //   still populates files being scanned/audited.
+  // - Right pane: simple "Coming Soon" placeholder (no skipped content).
+  // - BELOW the two panes: NEW full-width bar spanning the app.
+  //   Inside: skipped files rendered as SINGLE ROW, comma-separated.
+  //
+  // CRITICAL PRESERVATION RULE (strict):
+  // EVERY line of skipped file logic remains 100% INTACT and
+  // untouched in this commit:
+  //   • let skippedFiles = $state<string[]>([])
+  //   • let skippedScrollContainer
+  //   • onMount listener: if not Active → push to skippedFiles,
+  //     scrollToBottom(skippedScrollContainer)
+  //   • resetResults(): skippedFiles = []
+  //   • scrollToBottom helper (shared)
+  //   • All references and the entire collection pipeline
+  //
+  // This is PURELY a rendering relocation. No logic was deleted,
+  // commented out, or refactored. The data continues to flow
+  // exactly as before so it is ready for the user's Step 2 + Step 3.
+  //
+  // The old per-pane skipped rendering (#each over skippedFiles
+  // inside .pane) has been removed from the right box only.
+  // All other skipped-related code is byte-for-byte preserved.
+  // =============================================
   let skippedFiles = $state<string[]>([]);
   let activeScrollContainer: HTMLElement | undefined = $state();
   let skippedScrollContainer: HTMLElement | undefined = $state();
@@ -615,6 +653,9 @@
       await ensureVault();
 
       ledgerFiles = await invoke("list_ledger_files", { vaultRootPath });
+      // NOTE: Current implementation is flat (only top-level .raa files in vault root).
+      // Job folder navigation (RAA-Vault/JobName-.../) is tabled until ~RAA-CONTROL-Manifest.log is finalized.
+      // See TODO in Rust list_ledger_files and RAA-NEWPATH-FORWARD.txt.
       // Clear selection when loading fresh data
       selectedLedgerPath = "";
       selectedLedgerContent = "";
@@ -717,12 +758,49 @@
 
 <div class="app-layout" class:scanning={isProcessing}>
   <header class="top-bar">
-    <button
-      type="button"
-      class="logo-btn"
-      onclick={() => (activeTab = "welcome")}>🛡️ RAA GATEKEEPER</button
-    >
-    <div class="version-tag">v0.4.0-dev</div>
+    <!-- Left column: Shield + GATEKEEPER -->
+    <div class="header-left">
+      <button
+        type="button"
+        class="logo-btn"
+        onclick={() => (activeTab = "welcome")}
+      >
+        🛡️ <span class="gatekeeper-text">GATEKEEPER</span>
+      </button>
+    </div>
+
+    <!-- Center column: Toast popups live here -->
+    <div class="header-center">
+      {#if certMsg}
+        <div class="mission-success-toast" class:error={!lastCertifySuccess}>
+          <span>{certMsg}</span>
+          <button
+            class="toast-close"
+            onclick={() => {
+              certMsg = "";
+              lastCertifySuccess = true;
+            }}
+          >
+            ×
+          </button>
+        </div>
+      {/if}
+
+      {#if showWatcherAlert}
+        <div class="watcher-toast">
+          <span class="toast-icon">🕵️</span>
+          <div class="toast-body">
+            <div class="toast-title">DNA Change Detected</div>
+            <div class="toast-path">{lastWatchedFile.split("/").pop()}</div>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Right column: Version -->
+    <div class="header-right">
+      <div class="version-tag">v0.4.0-dev</div>
+    </div>
   </header>
 
   <nav class="nav-bar">
@@ -873,13 +951,22 @@
               </div>
             </div>
             <div class="pane">
-              <h4>🚫 Skipped</h4>
-              <div class="scroll-list" bind:this={skippedScrollContainer}>
-                {#each skippedFiles as f}<div class="file-entry muted">
-                    {f}
-                  </div>{/each}
-              </div>
+              <!-- TEMPORARY PLACEHOLDER (right pane preserved for layout) -->
+              <h4>Coming Soon</h4>
+              <div class="coming-soon-placeholder">Future feature area</div>
             </div>
+          </div>
+
+          <!-- TEMPORARY FULL-WIDTH SKIPPED BAR (single-row, comma-separated)
+               All skippedFiles collection/processing logic is untouched above.
+               This bar exists only as a holding pattern per user request. -->
+          <div class="skipped-bottom-bar">
+            <span class="skipped-label">🚫 SKIPPED</span>
+            {#if skippedFiles.length > 0}
+              <span>{skippedFiles.map((f) => f.split('/').pop() || f).join(', ')}</span>
+            {:else}
+              <span class="muted">—</span>
+            {/if}
           </div>
         </section>
       {:else if activeTab === "certify"}
@@ -895,7 +982,7 @@
           >
           <div class="dual-pane-monitor">
             <div class="pane">
-              <h4>📡 Live</h4>
+              <h4>📡 Audited</h4>
               <div class="scroll-list" bind:this={activeScrollContainer}>
                 {#each activeFiles as f}<div class="file-entry">
                     {f.split("/").pop()}
@@ -903,13 +990,31 @@
               </div>
             </div>
             <div class="pane">
-              <h4>🚫 Skipped</h4>
-              <div class="scroll-list" bind:this={skippedScrollContainer}>
-                {#each skippedFiles as f}<div class="file-entry muted">
-                    {f.split("/").pop()}
-                  </div>{/each}
-              </div>
+              <!-- TEMPORARY PLACEHOLDER (right pane preserved for layout) -->
+              <h4>Coming Soon</h4>
+              <div class="coming-soon-placeholder">Future feature area</div>
             </div>
+          </div>
+
+          <!-- TEMPORARY FULL-WIDTH SKIPPED BAR (single-row, comma-separated)
+               All skippedFiles collection/processing logic is untouched above.
+               This bar exists only as a holding pattern per user request. -->
+          <div class="skipped-bottom-bar">
+            <span class="skipped-label">🚫 SKIPPED</span>
+            {#if skippedFiles.length > 0}
+              <span>{skippedFiles.map((f) => f.split('/').pop() || f).join(', ')}</span>
+            {:else}
+              <span class="muted">—</span>
+            {/if}
+
+            <!-- 
+              DEBUG HELPER (commented out for now)
+              Uncomment the block below when you need to inspect the raw skippedFiles array again.
+              <details style="margin-left: 12px; font-size: 10px;">
+                <summary>Debug raw ({skippedFiles.length})</summary>
+                <pre style="max-height: 120px; overflow: auto; background: #111; padding: 4px; margin: 4px 0 0 0; font-size: 9px;">{JSON.stringify(skippedFiles, null, 2)}</pre>
+              </details>
+            -->
           </div>
         </section>
       {:else if activeTab === "integrity"}
@@ -1015,8 +1120,8 @@
             <div class="filter-logic-zone">
               <h4 class="filter-title">📁 RAA Vault Location</h4>
               <p class="filter-hint">
-                The vault is always stored inside a folder named <strong>RAA_Vault</strong>. 
-                When no custom root is selected, it uses <code>~/Documents/RAA_Vault</code> by default (created automatically on first use).
+                The vault is always stored inside a folder named <strong>RAA-Vault</strong>. 
+                When no custom root is selected, it uses <code>~/Documents/RAA-Vault</code> by default (created automatically on first use).
               </p>
               <div class="flex-col gap-8">
                 <!-- Current Vault Status -->
@@ -1026,17 +1131,17 @@
                     <button class="remove-btn" onclick={() => vaultRootPath = ""}>×</button>
                   {:else}
                     <span class="path-text text-11 default-vault-label">
-                      ~/Documents/RAA_Vault <span class="text-10 muted">(default)</span>
+                      ~/Documents/RAA-Vault <span class="text-10 muted">(default)</span>
                     </span>
                   {/if}
                 </div>
 
                 <button class="add-slot-btn" onclick={selectVaultRootPath}>
-                  + Select Root Directory for RAA_Vault
+                  + Select Root Directory for RAA-Vault
                 </button>
 
                 <button class="add-slot-btn mt-6" onclick={setDefaultVault}>
-                  Set Default to ~/Documents/RAA_Vault
+                  Set Default to ~/Documents/RAA-Vault
                 </button>
               </div>
 
@@ -1278,15 +1383,7 @@
         </div>
       {/if}
       
-      {#if certMsg}
-        <div class="forensic-status-overlay">
-          <div class="mission-success-toast" class:error={!lastCertifySuccess}>
-            <span>{certMsg}</span>
-            <button class="toast-close" onclick={() => { certMsg = ""; lastCertifySuccess = true; }}>×</button
-            >
-          </div>
-        </div>
-      {/if}
+      <!-- Toast now lives in the center column of the top header -->
 
       <!-- Delete Confirmation Modal -->
       {#if deleteConfirmPath}
@@ -1311,15 +1408,7 @@
       {/if}
       </div>
       
-      {#if showWatcherAlert}
-        <div class="watcher-toast">
-          <span class="toast-icon">🕵️</span>
-          <div class="toast-body">
-            <div class="toast-title">DNA Change Detected</div>
-            <div class="toast-path">{lastWatchedFile.split("/").pop()}</div>
-          </div>
-        </div>
-      {/if}
+      <!-- DNA watcher toast moved into header center column -->
       
       {#if showHistoryList && watcherHistory.length > 0}
         <div class="alert-dropdown shadow-vault">

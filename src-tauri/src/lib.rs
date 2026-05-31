@@ -7,11 +7,22 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::Emitter;
 use walkdir::WalkDir;
 use zip::read::ZipArchive;
+
+/// Names of files and directories that should always be excluded from auditing.
+/// This list is used in both generate_manifest and build_control_manifest.
+const JUNK_NAMES: &[&str] = &[
+    "node_modules",
+    ".git",
+    "target",
+    "dist",
+    "__MACOSX",
+    ".DS_Store", // macOS Finder metadata file
+];
 
 #[derive(Serialize)]
 struct LlmRequest {
@@ -124,27 +135,227 @@ fn resolve_vault_root(vault_root_path: &str) -> PathBuf {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
 
     if vault_root_path.is_empty() {
-        return PathBuf::from(&home).join("Documents/RAA_Vault");
+        return PathBuf::from(&home).join("Documents/RAA-Vault");
     }
 
     let trimmed = vault_root_path.trim_end_matches('/');
 
     // If the value already points to the full vault dir, use it directly
-    if trimmed.ends_with("RAA_Vault") {
+    // Support both old (RAA_Vault) and new (RAA-Vault) for backward compatibility during transition
+    if trimmed.ends_with("RAA-Vault") || trimmed.ends_with("RAA_Vault") {
         return PathBuf::from(trimmed);
     }
 
     // Support ~/Documents and ~ as home
     if trimmed == "~" || trimmed.starts_with("~/") {
         let rest = trimmed.strip_prefix("~/").unwrap_or("");
-        return PathBuf::from(&home).join(rest).join("RAA_Vault");
+        return PathBuf::from(&home).join(rest).join("RAA-Vault");
     }
 
-    // Absolute or relative path provided by user (from dialog) — append /RAA_Vault
-    PathBuf::from(trimmed).join("RAA_Vault")
+    // Absolute or relative path provided by user (from dialog) — append /RAA-Vault
+    PathBuf::from(trimmed).join("RAA-Vault")
 }
 
 // --- RAA LOGGING ENGINE ---
+
+/// Sanitizes a string for safe use in filenames and directory names.
+///
+/// 2025-10 Decision: We standardized on the **hyphen `-`** as the separator
+/// for spaces and other characters across the new granular architecture
+/// (job folders, control manifests, per-file reports, etc.).
+///
+/// Reasons:
+/// - Clean, modern, professional appearance in file explorers
+/// - Consistent with the existing timestamp format (YYYYMMDD-HHMMSS)
+/// - Better readability and sharing than underscores for user-facing artifacts
+/// - Safe in shells, URLs, and across Windows/macOS/Linux
+///
+/// See RAA-NEWPATH-FORWARD.txt and ROADMAP.md → "New Path Forward" section
+/// for full context on the shift to job folders + ONE FILE = ONE REPORT.
+///
+/// FUTURE NOTE:
+/// We have decided to use the **static name** `~RAA-CONTROL-Manifest.log`
+/// inside every job folder (instead of a dynamic per-job name).
+/// This simplifies logic significantly — no variable naming needed.
+/// The `~` prefix ensures it always sorts to the top of the folder.
+/// This file will be the very first artifact created when a user starts
+/// either a Certify or Archive job.
+fn sanitize_for_filename(input: &str) -> String {
+    // Replace filesystem-illegal characters first
+    let s = input.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "-");
+
+    // Then normalize spaces, dots, and existing underscores to hyphens.
+    // We deliberately avoid using periods as separators (they conflict with extensions).
+    let s = s.replace([' ', '.', '_'], "-");
+
+    // Collapse multiple consecutive hyphens and trim leading/trailing ones
+    let s = s.split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    s
+}
+
+/// Collects two lists of relative paths from the source directory:
+/// - Files that will be audited (match allowed extensions or are .zip)
+/// - Files that will be skipped (do not match allowed extensions)
+///
+/// This is used both for building the control manifest and for writing
+/// per-file reports inside the job folder.
+fn collect_audited_and_skipped_paths(
+    root: &Path,
+    allowed_extensions: &[String],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut audited: Vec<PathBuf> = Vec::new();
+    let mut skipped: Vec<PathBuf> = Vec::new();
+
+    let walker = WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !JUNK_NAMES.iter().any(|&ex| name == ex) && !name.starts_with("._")
+        });
+
+    for entry in walker.filter_map(|e| e.ok()) {
+        if entry.path() == root {
+            continue;
+        }
+
+        if entry.file_type().is_file() {
+            let ext = entry
+                .path()
+                .extension()
+                .map(|s| format!(".{}", s.to_string_lossy().to_lowercase()))
+                .unwrap_or_default();
+
+            if let Ok(rel) = entry.path().strip_prefix(root) {
+                if allowed_extensions.contains(&ext) || ext == ".zip" {
+                    audited.push(rel.to_path_buf());
+                } else {
+                    skipped.push(rel.to_path_buf());
+                }
+            }
+        }
+    }
+
+    (audited, skipped)
+}
+
+/// Builds a minimal hierarchical text representation of the directory structure
+/// for the control manifest. Uses simple 4-space indentation to create a
+/// "tabbed" visual effect that reflects the folder hierarchy.
+///
+/// This version now includes two sections:
+///   1. Files to be audited
+///   2. Files to be skipped (non-matching extensions, after junk filtering)
+///
+/// Directories are shown with a trailing `/`.
+/// Clean 4-space indentation is used for a simple tabbed look.
+fn build_control_manifest(
+    root: &Path,
+    allowed_extensions: &[String],
+    source_folder_name: &str,
+    job_name: &str,
+    _timestamp: &str,
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+
+    // Header
+    lines.push("~RAA-CONTROL-Manifest.log".to_string());
+    lines.push(format!("Generated: {}", Local::now().format("%Y-%m-%d %H:%M:%S")));
+    lines.push(format!("Source: {}", root.display()));
+    lines.push(format!("Job Folder: {}", job_name));
+    lines.push(String::new());
+
+    let (audited_rel_paths, skipped_rel_paths) =
+        collect_audited_and_skipped_paths(root, allowed_extensions);
+
+    // ============================================================
+    // SECTION 1: Files to be audited
+    // ============================================================
+    lines.push(format!(
+        "Directory Structure ({} files to be audited):",
+        audited_rel_paths.len()
+    ));
+    lines.push(String::new());
+
+    lines.extend(build_tree_lines(source_folder_name, &audited_rel_paths));
+
+    lines.push(String::new());
+
+    // ============================================================
+    // SECTION 2: Files to be skipped
+    // Only directories that actually contain skipped files are shown.
+    // ============================================================
+    lines.push(format!(
+        "Directory Structure ({} files to be skipped):",
+        skipped_rel_paths.len()
+    ));
+    lines.push(String::new());
+
+    lines.extend(build_tree_lines(source_folder_name, &skipped_rel_paths));
+
+    lines.join("\n")
+}
+
+/// Builds clean indented tree lines from a list of relative file paths.
+/// Only ancestor directories that contain at least one file from the list are included.
+fn build_tree_lines(root_name: &str, file_paths: &[PathBuf]) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if file_paths.is_empty() {
+        lines.push(format!("{}/", root_name));
+        return lines;
+    }
+
+    // Root line
+    lines.push(format!("{}/", root_name));
+
+    // Collect all unique ancestor directories for the given files
+    let mut all_dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    for path in file_paths {
+        let mut current = path.clone();
+        while let Some(parent) = current.parent() {
+            if !parent.as_os_str().is_empty() {
+                all_dirs.insert(parent.to_path_buf());
+            }
+            current = parent.to_path_buf();
+        }
+    }
+
+    // Sort everything so directories appear before their files in a natural order
+    let mut all_entries: Vec<(PathBuf, bool)> = Vec::new(); // (path, is_file)
+
+    for path in file_paths {
+        all_entries.push((path.clone(), true));
+    }
+    for dir in &all_dirs {
+        all_entries.push((dir.clone(), false));
+    }
+
+    all_entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (path, is_file) in all_entries {
+        let depth = path.components().count();
+        let indent = "    ".repeat(depth);
+
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if is_file {
+            lines.push(format!("{}{}", indent, name));
+        } else {
+            lines.push(format!("{}{}/", indent, name));
+        }
+    }
+
+    lines
+}
+
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str, vault_root_path: &str) -> PathBuf {
     let audit_root = resolve_vault_root(vault_root_path);
     
@@ -156,10 +367,7 @@ fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str
     let manifest_name = if scan_type == "audit" {
         "Gatekeeper-master-terminal-history.raa".to_string()
     } else {
-        let clean_label = target_label
-            .replace(".", "-")
-            .replace(" ", "_")
-            .replace("/", "_");
+        let clean_label = sanitize_for_filename(target_label);
         format!("Gatekeeper-{}-{}-{}.raa", scan_type, clean_label, timestamp)
     };
 
@@ -312,8 +520,8 @@ async fn check_integrity(vault_root_path: Option<String>) -> Result<serde_json::
     // 2. Actually test vault resolvability
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
     let audit_root = match &vault_root_path {
-        Some(p) if !p.is_empty() => PathBuf::from(p).join("RAA_Vault"),
-        _ => PathBuf::from(home).join("Documents/RAA_Vault"),
+        Some(p) if !p.is_empty() => PathBuf::from(p).join("RAA-Vault"),
+        _ => PathBuf::from(home).join("Documents/RAA-Vault"),
     };
     let vault_ok = audit_root.exists();
 
@@ -414,16 +622,73 @@ async fn generate_manifest(
     vault_root_path: String,
 ) -> Result<RAAReport, String> {
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
+
+    // =============================================
+    // STAGE 1: Create Job Folder + ~RAA-CONTROL-Manifest.log immediately
+    // This is the very first action when a Certify job starts.
+    // The manifest is a minimal inventory + hierarchy of files that will be audited.
+    // =============================================
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
+
+    let source_folder_name = folder_path_buf
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("UnknownProject");
+
+    let job_name = format!("{}-{}", sanitize_for_filename(source_folder_name), timestamp);
+
+    let vault_root = resolve_vault_root(&vault_root_path);
+    let job_folder = vault_root.join(&job_name);
+
+    // Create the dated job folder
+    if !job_folder.exists() {
+        let _ = fs::create_dir_all(&job_folder);
+    }
+
+    // Collect which files will be skipped (we know this before any LLM work)
+    let (_audited_paths, skipped_rel_paths) =
+        collect_audited_and_skipped_paths(&folder_path_buf, &allowed_extensions);
+
+    // Emit skipped events immediately so the UI's 🚫 SKIPPED area populates
+    for rel in &skipped_rel_paths {
+        let full_path = folder_path_buf.join(rel);
+        let _ = window.emit(
+            "scan-event",
+            ScanEvent {
+                path: full_path.to_string_lossy().into(),
+                status: "Skipped".into(),
+            },
+        );
+    }
+
+    // Build minimal hierarchical inventory (control manifest)
+    let manifest_content = build_control_manifest(
+        &folder_path_buf,
+        &allowed_extensions,
+        source_folder_name,
+        &job_name,
+        &timestamp,
+    );
+
+    // Write the static control manifest (always the same name)
+    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
+    match fs::write(&manifest_path, &manifest_content) {
+        Ok(_) => {
+            eprintln!("[RAA] Created control manifest at: {:?}", manifest_path);
+        }
+        Err(e) => {
+            eprintln!("[RAA] WARNING: Failed to write control manifest to {:?}: {}", manifest_path, e);
+        }
+    }
+
+    // Continue with original processing...
     let mut target_files = Vec::new();
 
     let walker = WalkDir::new(&folder_path_buf)
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
-            !["node_modules", ".git", "target", "dist", "__MACOSX"]
-                .iter()
-                .any(|&ex| name == ex)
-                && !name.starts_with("._")
+            !JUNK_NAMES.iter().any(|&ex| name == ex) && !name.starts_with("._")
         });
 
     for entry in walker.filter_map(|e| e.ok()) {
@@ -677,6 +942,25 @@ async fn generate_manifest(
             );
             ledger_entries.push_str(&analysis_block);
 
+            // Write individual per-file report inside the job folder, preserving source hierarchy.
+            // This enables proper DNA tracking per file in the new job folder model.
+            let rel_path = match job.path.strip_prefix(&folder_path_buf) {
+                Ok(p) => p.to_path_buf(),
+                Err(_) => job.path.file_name().map(PathBuf::from).unwrap_or_else(|| job.path.clone()),
+            };
+            let target_path = job_folder.join(&rel_path).with_extension("raa");
+            if let Some(parent) = target_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            match fs::write(&target_path, &analysis_block) {
+                Ok(_) => {
+                    eprintln!("[RAA] Wrote per-file audited report: {:?}", target_path);
+                }
+                Err(e) => {
+                    eprintln!("[RAA] WARNING: Failed to write per-file audited report {:?}: {}", target_path, e);
+                }
+            }
+
             if verdict.to_uppercase().contains("VIOLATION") {
                 any_violations = true;
             }
@@ -698,7 +982,59 @@ async fn generate_manifest(
 
     let full_ledger = format!("{}{}", overall_header, ledger_entries);
 
-    log_to_raa("certify", &folder_path, "FOLDER_HASH", &full_ledger, &vault_root_path);
+    // Write the report inside the job folder we created at the start of this function.
+    // This makes the control manifest + the main report live together.
+    // Future work: split this into individual per-file .raa files that mirror source hierarchy
+    // inside the job folder (e.g. job-folder/src/utils/foo.rs.raa).
+    let report_filename = format!("certify-report-{}.raa", timestamp);
+    let report_path = job_folder.join(report_filename);
+    match fs::write(&report_path, &full_ledger) {
+        Ok(_) => {
+            eprintln!("[RAA] Wrote certify report to: {:?}", report_path);
+        }
+        Err(e) => {
+            eprintln!("[RAA] WARNING: Failed to write certify report to {:?}: {}", report_path, e);
+        }
+    }
+
+    // =============================================
+    // Write individual reports for skipped files inside the job folder.
+    // We do this first (as requested) because we already know the skipped list
+    // before any LLM work happens.
+    // Each skipped file gets its own small .raa report with its DNA hash.
+    // =============================================
+    for rel_path in &skipped_rel_paths {
+        let full_path = folder_path_buf.join(rel_path);
+        let content = fs::read_to_string(&full_path).unwrap_or_default();
+        let hash = get_content_hash(&content);
+
+        let skipped_report = format!(
+            "--- RAA FILE ANALYSIS ---\n\
+             File: {}\n\
+             Hash: {}\n\
+             Verdict: SKIPPED\n\
+             Analysis:\n\
+             This file was not sent for AI analysis because its file extension \
+             did not match the allowed extensions configured for this certification run.\n\
+             ------------------------\n",
+            rel_path.display(),
+            hash
+        );
+
+        let target_path = job_folder.join(rel_path).with_extension("raa");
+        if let Some(parent) = target_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        match fs::write(&target_path, &skipped_report) {
+            Ok(_) => {
+                eprintln!("[RAA] Wrote skipped report: {:?}", target_path);
+            }
+            Err(e) => {
+                eprintln!("[RAA] WARNING: Failed to write skipped report {:?}: {}", target_path, e);
+            }
+        }
+    }
 
     Ok(RAAReport {
         verdict: overall_verdict,
@@ -746,7 +1082,7 @@ async fn create_vault_directory(root_path: String) -> Result<String, String> {
     let audit_root = resolve_vault_root(&root_path);
 
     fs::create_dir_all(&audit_root)
-        .map_err(|e| format!("Failed to create RAA_Vault at {:?}: {}", audit_root, e))?;
+        .map_err(|e| format!("Failed to create RAA-Vault at {:?}: {}", audit_root, e))?;
 
     Ok(audit_root.to_string_lossy().into_owned())
 }
@@ -754,13 +1090,27 @@ async fn create_vault_directory(root_path: String) -> Result<String, String> {
 #[tauri::command]
 async fn get_default_vault_path() -> Result<String, String> {
     let home = env::var("HOME").unwrap_or_else(|_| ".".into());
-    let default_path = PathBuf::from(home).join("Documents").join("RAA_Vault");
+    let default_path = PathBuf::from(home).join("Documents").join("RAA-Vault");
     Ok(default_path.to_string_lossy().into_owned())
 }
 
 // --- LEDGER BROWSER COMMANDS ---
 #[tauri::command]
 async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, String> {
+    // ============================================================
+    // TODO (New Path Forward - Ledger Browser)
+    // Currently this does a flat read_dir on the vault root only.
+    // With the new job folder model (RAA-Vault/JobName-YYYYMMDD-HHMMSS/),
+    // we need to either:
+    //   1. Recursively discover .raa files inside job folders, or
+    //   2. Change the UI to show job folders as containers that the user
+    //      can navigate into (like a directory tree).
+    //
+    // This work is explicitly tabled until the ~RAA-CONTROL-Manifest.log
+    // and per-file report writing inside job folders are stabilized.
+    //
+    // See RAA-NEWPATH-FORWARD.txt → Stage 5 and "Ledger Browser" notes.
+    // ============================================================
     let audit_root = resolve_vault_root(&vault_root_path);
 
     if !audit_root.exists() {

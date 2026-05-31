@@ -1,0 +1,245 @@
+# RAA-NEWPATH-FORWARD.txt
+# Comprehensive Reference — Granular Per-File Forensic Ledger Architecture
+# Created for fallback / clarity if Grok or future sessions lose context
+
+================================================================================
+## 1. CORE VISION & WHY WE ARE DOING THIS
+================================================================================
+
+Primary Goal:
+Move RAA-Gatekeeper from "one big .raa report per job" to a true **ONE FILE = ONE REPORT** model.
+
+Every individual file that receives an AI forensic audit (whether it lives loose in a folder or inside a ZIP) will produce its own self-contained `.raa` ledger file. That ledger will contain:
+- The full oracle "Analysis" paragraph (not just verdict)
+- A clear verdict
+- The file's DNA (SHA-256 content hash)
+
+All artifacts from one user-initiated run (Certify folder or Archive) are grouped inside a single dated **Job Folder** inside the user's RAA-Vault.
+
+As the very first action on "Start", we create:
+- The dated Job Folder
+- A special `~RAA-CONTROL-Manifest.log` (static name — always the same in every job folder) as the audit control sheet / master inventory inside it
+
+This gives Joe (and the creator) a clean, professional, forensic-grade package that is easy to review later, easy to reason about after the fact, and gives every file strong, independent DNA ownership.
+
+User's explicit reasons (captured during deep reasoning):
+- Each file owning its own hash in its own ledger is easier to deal with long-term for DNA verification.
+- After a run of 80 files (75 reports + 5 skipped), it is far easier to do post-facto analysis, after-action reporting, or find a singular culprit when you have discrete files + a master control manifest than when you have to parse one giant monolithic report.
+- Job folders + hierarchy mirroring make the vault feel organized and make duplicate filename situations safe.
+- The right pane provides real-time comfort ("here is what I just did") while a long job is running.
+
+This is a personal hobby / re-learning / "masterpiece" project. Coding cost and long-term maintenance burden are secondary to building something the creator is proud of and that genuinely protects "Joe".
+
+================================================================================
+## 2. KEY ARCHITECTURAL DECISIONS (LOCKED IN DURING REASONING)
+================================================================================
+
+1. ONE FILE = ONE REPORT
+   - No more single aggregated ledger with dozens of "--- RAA FILE ANALYSIS ---" blocks + one OVERALL header as the primary persisted artifact.
+   - Each audited file gets its own `.raa`.
+
+2. Job Folders (dated containers)
+   - Example: `MyProject-20251001-143022/` or `cool-repo.zip-20251001-143022/`
+   - All per-file .raa reports + the control manifest live inside this folder.
+   - Old flat naming style (`Gatekeeper-certify-... .raa` directly in vault root) is being phased toward this model.
+
+3. Hierarchy Mirroring (strongly preferred)
+   - When writing per-file reports, mirror the original source folder structure inside the job folder whenever possible.
+   - This provides natural duplicate-name protection and makes after-action navigation familiar.
+
+4. ~RAA-CONTROL-Manifest (First Stage)
+   - Created immediately on job start, before any file reading or LLM work.
+   - Uses the **static name** `~RAA-CONTROL-Manifest.log` in *every* job folder (no dynamic naming or variables needed).
+   - Contains the complete inventory + full hierarchy of every file that will be audited.
+   - The `~` prefix ensures it always sorts to the very top of the job folder when viewed in Finder/Explorer.
+   - Acts as the permanent "audit control sheet" and scope declaration for that job.
+
+5. Archive Scanning Is Preserved
+   - We will continue to support pointing at a .zip and getting per-file analysis without forcing manual extraction first.
+   - The in-memory ZipArchive path stays.
+   - It will now emit per-file .raa reports inside a job folder (instead of one aggregated archive report).
+   - DNA verification for container-origin files will still need special handling (📦 states, limited re-verifiability).
+
+6. Right Pane Role (Current vs Future)
+   - **Current (near-term):** Pure live comfort / "what I just did" feed.
+     - Shows .raa files being created in real time as the job progresses.
+     - Gives the user visible forward progress and psychological comfort during long Certify or Archive runs.
+     - Not intended for click-to-open or deep interaction yet (the "YET" <wink>).
+   - **Future possibilities (explicitly parked):**
+     - Right pane could become a live view of the actual ledger content.
+     - Right pane could dynamically show skipped files + reasons (extension filter, junk, failure, etc.).
+     - Eventually a dedicated Reports section (possibly with PDF output) that summarizes an entire job using the control manifest + the individual .raa files.
+
+7. Skipped Files Handling
+   - All existing skippedFiles state, collection logic, reset logic, and the current bottom comma-separated bar are to be preserved exactly as-is for now (this was the explicit "temporary holding pattern" request).
+   - Future stages may move or enhance skipped display into the right pane.
+
+================================================================================
+## 3. STAGED IMPLEMENTATION ORDER (START HERE)
+================================================================================
+
+Stage 1: ~RAA-CONTROL-Manifest (Current / First Stage to Implement)
+- Trigger: User clicks "Start Certification" (handleCertifyFolder) or selects a ZIP (handleBrowseArchive).
+- Immediate actions:
+  a. Determine job name + timestamp.
+  b. Create the dated job folder inside the resolved vault root.
+  c. Walk the target (folder tree or ZIP central directory) using the same filters that will be used for actual auditing.
+  d. Write the static file `~RAA-CONTROL-Manifest.log` as the very first file inside the job folder.
+- The manifest should clearly show full relative hierarchy.
+- This file is the master inventory / audit control sheet.
+- Emit an event so the right pane (once wired) can show "Created ~RAA-CONTROL-Manifest...".
+
+Stage 2: Right Pane Live Comfort Feed
+- Turn the current right "Coming Soon" pane into a real-time list of .raa files as they are successfully written.
+- Keep left pane as "📡 Audited" (files currently being processed).
+- Keep bottom bar for skipped (preserving all prior logic).
+- This is purely for user comfort during long jobs.
+
+Stage 3: Per-File .raa Emission + Job Folder Writing (Core Granular Work)
+- Refactor generate_manifest and scan_compressed_archive so that instead of (or in addition to) building one big string, they write individual rich .raa files for each audited file.
+- Use the job folder created in Stage 1 as the destination.
+- Apply hierarchy mirroring where possible.
+- Each written file should be a complete, standalone, high-quality forensic ledger for exactly one file.
+- Update RAAReport return types and success/error handling as needed for partial success across many files.
+
+Stage 4: Archive Path Full Alignment
+- Make sure the ZIP scanning path produces per-file .raa artifacts inside the job folder.
+- Decide on job folder naming for ZIP sources (e.g. based on the zip filename).
+- Keep the in-memory safety model.
+
+Stage 5: Ledger Browser & DNA Updates for Job Folders
+- Make list_ledger_files, the ledger UI, DNA extraction, and verification aware of job folders.
+- The control manifest should be easily discoverable and perhaps specially rendered when a job is selected.
+
+**IMPORTANT NOTE (Tabled Work):**
+The current ledger browser (both Rust `list_ledger_files` and the Svelte UI) does a flat directory listing of the vault root.
+It does **not** yet understand or display the new dated job folders.
+Until the ~RAA-CONTROL-Manifest.log and the writing of .raa reports inside job folders are in a stable state that the user is happy with,
+we are deliberately **not** rewriting the ledger listing logic.
+See the TODO comment at the top of `list_ledger_files` in lib.rs for details.
+This is intentionally deferred.
+
+Later Stages (explicitly future):
+- Right pane evolution (clickable / live ledger / skipped with reasons)
+- New Reports section + possible PDF generation
+- Any vault visualization improvements, job-level metadata, etc.
+
+================================================================================
+## 4. TECHNICAL MAPPING (WHERE THINGS LIVE)
+================================================================================
+
+Rust side (src-tauri/src/lib.rs):
+- generate_manifest (the big bucketing + LLM loop for Certify)
+- scan_compressed_archive (the per-file in-memory ZIP walker)
+- log_to_raa (the current writer — will need to become job-folder aware or be replaced/supplemented)
+- resolve_vault_root + related vault helpers
+- list_ledger_files, read_single_ledger_file, delete_ledger_file
+- FileJob struct, bucket logic, FileAnalysis JSON struct (recent structured output work)
+- RAAReport return type (recently hardened for is_error)
+
+**Junk / Exclusion Filter (shared constant `JUNK_NAMES` in lib.rs):**
+This list controls which files and directories are completely ignored during auditing and control manifest generation.
+Current contents (as of latest update):
+- node_modules
+- .git
+- target
+- dist
+- __MACOSX
+- .DS_Store          ← Added 2026-05-30 (macOS Finder metadata)
+
+This list should be kept in sync between `generate_manifest` and `build_control_manifest`.
+
+Svelte side (src/routes/+page.svelte):
+- handleCertifyFolder and handleBrowseArchive
+- resetResults (clears activeFiles + skippedFiles)
+- scan-event listener (Active vs Skipped)
+- activeFiles / skippedFiles state and the dual-pane + (future) right-pane rendering
+- extractRecordedHashes + DNA verification logic (will need to handle per-file ledgers and job folders)
+- currentReport, certMsg, timers, etc.
+
+CSS (src/app.css):
+- .dual-pane-monitor and .pane rules
+- New styles will be needed for the right-pane comfort feed and eventually job-folder-aware ledger list
+
+Other important files:
+- grok.review.txt (permanent mission + push discipline + capture points)
+- ROADMAP.md (this new path is now documented there)
+
+================================================================================
+## 5. NAMING & CONVENTIONS
+================================================================================
+
+Job Folder naming (proposed, confirm during implementation):
+- Pattern: <sanitized-target>-<YYYYMMDD-HHMMSS>/
+  Examples:
+  - MyCoolProject-20251001-143022/
+  - cool-repo.zip-20251001-143022/
+
+Control Manifest:
+- Always uses the **static name** `~RAA-CONTROL-Manifest.log` in every job folder.
+- The `~` prefix guarantees it sorts to the top.
+- Chosen as `.log` for clarity (forensic log / audit control sheet).
+
+Per-file reports inside the job folder:
+- Should be short and meaningful (ideally just the original basename + .raa, or the mirrored relative path).
+- The job folder name carries the timestamp and job identity, so individual filenames can be much cleaner than the old flat style.
+
+================================================================================
+## 6. JOE EXPERIENCE TARGETS
+================================================================================
+
+- Joe downloads a repo zip or folder.
+- He clicks Start.
+- He immediately sees a job folder appear in his RAA-Vault containing a prominent `~RAA-CONTROL-Manifest.log` at the very top. This tells him "the Gatekeeper has taken a complete inventory of what you asked it to look at."
+- As the job runs, the right pane shows individual reports being created in real time — he feels progress instead of staring at a spinner.
+- When finished, he has a clean dated package: one control manifest + many small, high-quality, per-file .raa reports (with hierarchy preserved).
+- Later, doing after-action work is dramatically easier than digging through one giant file.
+
+================================================================================
+## 7. IMPORTANT CONSTRAINTS & PRESERVATIONS
+================================================================================
+
+- Do NOT delete or refactor the existing skippedFiles collection/processing logic during early stages. It is being held in the bottom bar as a temporary pattern.
+- Keep the existing report colorization removal (plain <pre> / raw text) until we explicitly decide to bring highlighting back.
+- Maintain zero warnings / zero errors discipline.
+- Follow strict git push rules (local commits frequent, pushes only at clear milestones or end of day, ask first).
+- Enduring principle: A Certify job must never be allowed to appear successful if any audited file contains a violation. This must be enforced in the new per-file + job folder model.
+- Ledger browser is currently flat-only (no job folder navigation). Full directory-style browsing of the vault is explicitly tabled until the ~RAA-CONTROL-Manifest.log experience is finalized. See the detailed note in Stage 5 and the TODO in list_ledger_files.
+
+================================================================================
+## 8. OPEN / TABLED QUESTIONS (FROM REASONING SESSIONS)
+================================================================================
+
+- Exact naming pattern for job folders (tabled the zip-specific variant for now).
+- Internal format and content of the static `~RAA-CONTROL-Manifest.log` (plain text hierarchy? Include pre-computed hashes? Job metadata header?).
+- How much metadata should live in the control manifest vs. being reconstructible from the individual .raa files.
+- Whether the control manifest should ever be "live updated" later or remain a pure point-in-time snapshot.
+- Right pane future evolution timing and scope.
+- How the old flat .raa files in existing vaults will be handled during transition (coexistence period?).
+- Whether we eventually want any kind of job-level summary .raa in addition to the per-file ones and the control manifest.
+
+================================================================================
+## 9. REFERENCES & RELATED DOCUMENTS
+================================================================================
+
+- ROADMAP.md (the public staged plan)
+- grok.review.txt (permanent mission, push rules, capture points)
+- src-tauri/src/lib.rs (core engine)
+- src/routes/+page.svelte (UI and event handling)
+- src/app.css (layout rules for panes)
+
+================================================================================
+## 10. SUCCESS CRITERIA FOR STAGE 1 (~RAA-CONTROL-Manifest)
+================================================================================
+
+When Stage 1 is complete, the following should be true:
+- Clicking Start on either Certify or Archive immediately creates a dated job folder in the vault.
+- The static file `~RAA-CONTROL-Manifest.log` is the very first thing written into that folder.
+- The manifest accurately lists the full hierarchy of every file that will be audited (using the same filtering logic the rest of the job will use).
+- The right pane (once Stage 2 is done) can announce the creation of this manifest.
+- No existing skipped logic, DNA logic, or permanent anchors have been broken.
+- Joe can open the job folder in Finder and immediately see the control sheet at the top.
+
+================================================================================
+This document exists so that the full context, rationale, and constraints of the New Path Forward are never lost, even across long gaps or if the main AI context is reset.
+================================================================================

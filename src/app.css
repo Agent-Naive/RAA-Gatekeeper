@@ -21,24 +21,56 @@
 }
 
 .top-bar {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  padding: 15px 30px;
+  padding: 12px 20px;
   background: #000;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-height: 52px; /* base height without toast */
+  position: relative;
 }
 
 .logo-btn {
   background: none;
   border: none;
-  color: var(--primary);
+  color: inherit;
   font-weight: 900;
   font-size: 14px;
   letter-spacing: 2px;
   cursor: pointer;
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gatekeeper-text {
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.header-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px; /* reserves space so header doesn't jump when toasts appear */
+  padding: 2px 8px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .nav-bar {
@@ -196,34 +228,58 @@
   background: #222;
 }
 
-.forensic-status-overlay {
-  position: fixed;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 800px;
-  z-index: 1000;
-  pointer-events: none;
-}
-
 .mission-success-toast {
   background: #000;
   border: 1px solid var(--primary);
   color: var(--primary);
-  padding: 15px 25px;
+  padding: 6px 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   pointer-events: auto;
-  border-radius: 12px;
+  border-radius: 6px;
   text-align: left;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* Smooth popup inside the header center column */
+  animation: toast-fade-in 0.2s ease-out forwards;
+}
+
+@keyframes toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .mission-success-toast.error {
   border-color: #f87171;
   color: #f87171;
+}
+
+.mission-success-toast .toast-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  margin-left: 8px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.mission-success-toast .toast-close:hover {
+  opacity: 1;
 }
 
 .app-footer {
@@ -434,35 +490,44 @@
 
 /* Watcher / Alerts */
 .watcher-toast {
-  position: fixed;
-  bottom: 30px;
-  right: 30px;
+  /* Now in-flow inside the header center column (same area as audit toast) */
   background: #000;
   border: 1px solid var(--primary);
-  border-radius: 8px;
-  padding: 15px;
+  border-radius: 6px;
+  padding: 4px 10px;
   display: flex;
   align-items: center;
-  gap: 15px;
-  z-index: 10000;
-  box-shadow: 0 0 20px rgba(57, 108, 216, 0.4);
-  animation: slide-in 0.3s ease-out;
+  gap: 8px;
+  box-shadow: 0 2px 8px rgba(57, 108, 216, 0.3);
+  font-size: 11px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+
+  /* Subtle popup animation */
+  animation: toast-fade-in 0.2s ease-out forwards;
 }
 
-.toast-icon { font-size: 24px; }
+/* Compact styles when inside header */
+.watcher-toast .toast-icon {
+  font-size: 14px;
+}
 
-.toast-title {
-  font-size: 11px;
+.watcher-toast .toast-title {
+  font-size: 9px;
   font-weight: bold;
   color: var(--primary);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
-.toast-path {
-  font-size: 13px;
+.watcher-toast .toast-path {
+  font-size: 10px;
   color: #fff;
-  margin-top: 2px;
+  margin-top: 1px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .alert-hub-btn {
@@ -718,6 +783,10 @@
 .file-entry {
   padding: 4px 0;
   border-bottom: 1px solid #222;
+
+  /* Allow selecting individual file names (added for debugging, harmless for now) */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .ledger-item-name {
@@ -996,4 +1065,72 @@
   font-size: 20px;
   line-height: 1;
   margin-left: 12px;
+}
+
+/* =====================================================
+   TEMPORARY SKIPPED FILES BOTTOM BAR + COMING SOON PANE
+   (Holding pattern only — see +page.svelte comment block
+    above skippedFiles declaration for full rationale.)
+
+   User request (verbatim intent):
+   - Two boxes side-by-side kept for visual continuity.
+   - Left: LIVE / Audited (unchanged).
+   - Right: "Coming Soon" placeholder.
+   - Full-width bar BELOW containing skipped files as one
+     comma-separated row.
+
+   ALL original skipped logic, state, listeners, reset,
+   and scroll refs are preserved byte-for-byte elsewhere.
+   This CSS + the new .skipped-bottom-bar markup in the
+   two tabs can be removed or relocated cleanly in Step 2/3.
+   ===================================================== */
+
+.coming-soon-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #444;
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+}
+
+.skipped-bottom-bar {
+  margin-top: 12px;
+  background: #161616;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+  overflow-x: auto;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  /* Allow text selection so users can copy the skipped list for debugging */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Target the actual content area for selection */
+.skipped-bottom-bar > span:not(.skipped-label) {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.skipped-bottom-bar .skipped-label {
+  color: #555;
+  text-transform: uppercase;
+  font-size: 10px;
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.skipped-bottom-bar .muted {
+  color: #555;
 }
