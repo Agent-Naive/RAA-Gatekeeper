@@ -254,3 +254,218 @@ The question was whether we also want to try to **capture** that sequential anal
 **End of Capture Value of Audit Section**
 
 This section is intended as a permanent reference point for the state of the Certify multi-file bucket logic before moving into structured output implementation.
+---
+
+## 2026-05-30 — End of Day Report
+
+**Session Focus:**  
+Major architectural progress on the granular per-file report model + successful relocation of both toasts into the top header + significant watcher reliability improvements.
+
+### Major Accomplishments
+
+1. **Per-File .raa Reports (Audited Files)**
+   - `generate_manifest` now writes individual `.raa` files for every audited file.
+   - Reports are placed inside the dated job folder using the original source relative path (e.g. `job-folder/src/utils/helper.rs.raa`).
+   - This completes the core "ONE FILE = ONE REPORT" goal for the audited content.
+   - The old aggregated `certify-report-*.raa` is still written for backward compatibility during the transition.
+
+2. **~RAA-CONTROL-Manifest.log Enhanced with DNA Registry**
+   - The manifest is now finalized at the very end of the Certify process (after all hashing is complete).
+   - It now contains a **"DNA Registry (File → Hash)"** section near the top with every file (audited + skipped) listed as:
+     ```
+     File: relative/path/to/file.ext
+     Hash: <sha256>
+     ```
+   - This gives us a single, static-named file (`~RAA-CONTROL-Manifest.log`) per job that contains both the directory structure and all DNA hashes.
+   - This is currently the best single source of truth for quick hash lookup per job.
+
+3. **Top Header Restructured into 3-Column Layout**
+   - `.top-bar` is now a CSS Grid: `auto 1fr auto`
+   - **Left column**: 🛡️ + **GATEKEEPER** (in blue via `.gatekeeper-text`)
+   - **Center column**: Dedicated space for toast popups (both the audit completion toast and the DNA watcher toast now live here)
+   - **Right column**: Version tag (right-aligned, same styling as before)
+   - This successfully "reclaimed space" in the header and stopped the toasts from covering lower content.
+
+4. **Both Toasts Now Live in the Header Center Column**
+   - Audit completion toast (`.mission-success-toast`)
+   - DNA watcher toast (`.watcher-toast`)
+   - Both were moved out of their old fixed bottom positions.
+   - Added `min-width: 300px` to both toasts (user requested this for visual testing).
+   - User confirmed the new location works well.
+
+5. **Watcher Reliability Fixes**
+   - Removed the overly aggressive `!path_str.contains("~")` filter from the watcher event handler.
+   - The filter was silently dropping all events for any path containing a tilde character (very dangerous given how the user names test directories).
+   - After removal, the watcher began firing events reliably, including on external drives and directories containing `~`.
+   - User confirmed they are now seeing proper `⚡ SPARK` lines when editing files.
+
+### Current Architecture Snapshot (Important for Context)
+
+**Job Folder Structure (per Certify run):**
+```
+RAA-Vault/
+└── test-directory01-20260530-191527/
+    ├── ~RAA-CONTROL-Manifest.log          ← Static name, contains DNA Registry + trees
+    ├── certify-report-20260530-191527.raa ← Aggregated report (still written)
+    ├── threat.md.raa
+    ├── safe01.txt.raa
+    ├── threat01.txt.raa
+    └── ~test-dir02/
+        └── threat02.txt.raa
+```
+
+**~RAA-CONTROL-Manifest.log now contains (in order):**
+- Header (Generated, Source, Job Folder)
+- DNA Registry section (File + Hash for every file)
+- Directory Structure (files to be audited) — tree view
+- Directory Structure (files to be skipped) — tree view
+
+### Known Gotchas & Lessons Learned
+
+- The `contains("~")` filter in the watcher was extremely harmful and should probably never have been that broad. It was a quick hack that became technical debt.
+- Moving or renaming test directories requires manually re-arming the watcher with the new paths. The watcher does not auto-update.
+- Watcher behavior on external drives (`/Volumes/...`) can still be inconsistent due to FSEvents limitations on macOS.
+- Editor temp files (`.sb-*` files from Sublime Text, etc.) generate a lot of noise in the watcher. We may want to filter more aggressively later.
+- The ledger browser (`list_ledger_files`) is still completely flat and does not understand job folders yet. This was explicitly tabled until the manifest + per-file reports stabilized.
+- DNA verification currently depends on the user having the correct report selected. With per-file reports now scattered inside job folders, this will become increasingly painful until we improve the ledger UI.
+
+### Current UI State (Header)
+
+- 3-column grid in `.top-bar`
+- Both toasts live in `.header-center`
+- Toasts have `min-width: 300px` (added for testing)
+- Forensic toast is back to `font-size: 12px` (reverted after testing `font-weight: 700`)
+- User is currently happy with the visual structure of the control manifest.
+
+### Files / Areas That Changed Significantly Today
+
+- `src-tauri/src/lib.rs` — Major changes to `generate_manifest` (per-file report writing + DNA registry in manifest)
+- `src/routes/+page.svelte` — Header restructured into 3 columns, both toasts moved into center
+- `src/app.css` — New header grid, toast positioning + min-width, various small adjustments
+- `ROADMAP.md` — Updated with new architecture progress and the mandatory future settings reorganization note
+- `RAA-NEWPATH-FORWARD.txt` — Contains detailed notes on the current architecture
+
+### Open Questions / Next Priorities
+
+1. **DNA Verification Flow** — Now that we have per-file reports + a DNA Registry in the manifest, how should the watcher + verification actually work? Should it look first in the manifest? Should it scan job folders?
+2. **Ledger Browser for Job Folders** — Still tabled, but becoming increasingly necessary.
+3. **Watcher Noise** — Should we add more aggressive filtering for editor temp files (`.sb-*`, etc.)?
+4. **Settings Page Scrolling** — User strongly dislikes scrolling in Settings on Mac. Future mandatory improvement: button-driven sections instead of one long page.
+5. **Toast Polish** — User is testing `min-width: 300px`. May want further adjustments to width, height, or behavior.
+
+### Recommendations for Future Sessions
+
+- When testing the watcher, always confirm exactly which folders are currently listed in the "🕵️ Silent Watcher" section in Settings.
+- After any directory move/rename, the watcher must be re-armed.
+- The `~RAA-CONTROL-Manifest.log` is now the single best place to look for "what files were in this job and what were their hashes."
+- The per-file reports are the future. The aggregated `certify-report-*.raa` is legacy during transition.
+
+**Overall Feeling:**  
+Today was a genuinely productive day. We made real, visible progress on the granular architecture the user has been driving toward. The combination of per-file reports + DNA registry in the static manifest + toasts living in the header feels like a meaningful step forward.
+
+---
+
+## 2026-06-06 — Project Focus Switch + Comprehensive Context Re-acquisition
+
+**Session Focus:** Located the RAA-Gatekeeper project on disk, switched active Grok development context to it, and performed a full document review + status synthesis to establish strong continuity for future inference sessions. This was primarily a re-orientation and knowledge-loading session after moving focus from the home directory.
+
+### Major Accomplishments & Context Established This Session
+- Used terminal search (`find`) across ~ and ~/dev to locate the project root at `/Users/agent-naive/dev/RAA-Gatekeeper`.
+- Confirmed Git details: remote `https://github.com/Agent-Naive/RAA-Gatekeeper.git`, branch `main`, clean working tree at time of switch.
+- Established project context using the proper Grok invocation: `~/.grok/bin/grok --cwd /Users/agent-naive/dev/RAA-Gatekeeper inspect`. This correctly reported CWD + Git root, no project-local instructions/config yet, and user-level Grok config.
+- Performed deep reads of the project's own long-term memory artifacts:
+  - ROADMAP.md (full) — captured exact current status and staged plan.
+  - This file (grok.review.txt) — re-read permanent knowledge, git rules, and 2026-05-30 session history for continuity.
+  - RAA-Vision.md (full) — high-level philosophy.
+  - RAA-NEWPATH-FORWARD.txt (full) — the comprehensive internal reference document for the granular architecture (created as a fallback to prevent context loss).
+  - Attempted direct read of the foundational `RAA Gatekeeper.pdf` on Desktop (the "Birth of RAA" origin doc from ~April 5, 2026). Access blocked by macOS ("Operation not permitted"). Relied on RAA-Vision.md + references in other docs as proxy.
+- Synthesized and internalized "where we left off" for the entire project (detailed below).
+- Confirmed no AGENTS.md or local `.grok/` directory exists in the repo yet (opportunity for future project rules).
+- Noted existing artifacts in the tree: grok.review.txt, RAA-NEWPATH-FORWARD.txt, ROADMAP.md, RAA-Vision.md, RAA-NEWPATH-FORWARD.txt, previous review notes (grok.review.txt), test directories, and build artifacts.
+
+### Current Project Status Snapshot (Synthesized for Future Sessions)
+**From ROADMAP.md (as of this session):**
+- **Current Status:** Active Development — Phase 3 + 4 Core Complete + **New Granular Architecture Path Initiated**.
+- **Last Major Update:** Definition of the New Path Forward (ONE FILE = ONE REPORT + dated Job Folders + `~RAA-CONTROL-Manifest` as the first artifact).
+- Phases 1+2 (Core Engine & Performance) and core Phase 3+4 (Forensic UI & Silent Monitoring) are marked COMPLETE (terminal auditing with Bible cache, deep file + archive scanning, parallel Rayon hashing, Silent Watcher with DNA alerts, Integrity Guard, user-selectable vault, real-time timers, etc.).
+- "Currently In Progress / Next" items remain open: Rich Ledger Browser, DNA Verification UI, Export Reports, Violation History Dashboard ("Wall of Shame"), Token Economy Counter.
+- Significant polish note: Settings page reorganization into button-driven sections is called out as a **Mandatory UI Improvement (Deferred)** due to excessive scrolling pain on macOS.
+- Dominant content is the detailed **New Path Forward** section with 6 explicit stages (see below). Ledger browser work is *explicitly tabled* until `~RAA-CONTROL-Manifest` + per-file report writing inside job folders are stable. See TODO comments in `src-tauri/src/lib.rs` (especially `list_ledger_files`) and the full details in RAA-NEWPATH-FORWARD.txt.
+
+**New Path Forward (the active architecture we are implementing):**
+- Shift from monolithic "one big .raa per job" (with internal blocks) to **ONE FILE = ONE REPORT**.
+- Every file that receives LLM forensic analysis (Certify folder or inside Archive) produces its own dedicated `.raa` containing full oracle analysis paragraph + clear verdict + its own DNA (SHA-256).
+- All artifacts for one user-initiated job are grouped inside a **dated Job Folder** inside the user's RAA-Vault (e.g., `MyProject-20260606-123456/` or `cool-repo.zip-...`).
+- As the very first action on "Start Certification" or "Select ZIP": create the dated job folder + write a static-named `~RAA-CONTROL-Manifest.log` (the `~` prefix forces it to sort to the top in Finder). This becomes the permanent audit control sheet / master inventory + hierarchy declaration for the entire job.
+- Right pane is initially repurposed as a live "what I just did" comfort feed (shows .raa files being emitted in real time). Not yet clickable/interactive ("YET").
+- Hierarchy mirroring inside job folders is strongly preferred for duplicate-name safety and familiar after-action review.
+- Archive (ZIP) scanning must continue to work (in-memory, no full extraction) and emit per-file .raa inside the job folder.
+- Enduring principle (from ALLSAFE era, must be enforced in new model): *A Certify job must never be allowed to appear successful if any audited file contains a violation.*
+- Stages (detailed in ROADMAP and fully expanded in RAA-NEWPATH-FORWARD.txt):
+  1. ~RAA-CONTROL-Manifest (Current Focus / First Stage to stabilize).
+  2. Real-Time Right Pane Comfort Feed.
+  3. Per-File .raa Writing + Job Folder Hierarchy Mirroring (core of the granular model; partial implementation already landed in 2026-05-30 session).
+  4. Archive Path Full Alignment.
+  5. Ledger Browser Evolution for Job Folders (currently tabled).
+  6+. Future (right pane clickable, skipped files moved dynamically, job-level summaries, export, etc.).
+
+**From 2026-05-30 Session History (previous entry in this file):**
+- Major progress on the granular model: `generate_manifest` now writes individual `.raa` files per audited file (placed inside dated job folder using original relative source path). Legacy aggregated `certify-report-*.raa` still written for transition.
+- `~RAA-CONTROL-Manifest.log` enhanced with "DNA Registry (File → Hash)" section near the top — now the single best point-in-time source for what files were in a job and their hashes.
+- UI: Header restructured to 3-column CSS grid (left: logo/title, center: toasts, right: version). Both mission-success and watcher DNA toasts moved into `.header-center`.
+- Watcher fixes (removed harmful broad `~` filter that was dropping events on test dirs and external volumes).
+- Vault improvements (proactive default `~/Documents/RAA_Vault` creation + storing concrete path on first run).
+- Ledger UI polish (300px left pane, delete report with confirmation modal, consistent padding).
+- "Capture Value of Audit" checkpoint captured the state of multi-file bucketing + prompting logic before structured output improvements.
+- Open questions carried forward: DNA verification flow (manifest vs. per-file reports vs. job folders), ledger browser for job folders, watcher noise filtering, Settings scrolling pain, toast width polish.
+- Recommendations from that session are still highly relevant (re-arm watcher after dir moves, use manifest for hashes, per-file reports are the future, etc.).
+
+**From RAA-Vision.md + PDF references:**
+- Core philosophy: RAA (Restrictive Ability) as the modular "DLL standard" for AI security/trust. RAA-Gatekeeper is the Read-Only Auditor (ROA) — non-invasive forensic layer between local code and AI agents.
+- DNA Fingerprinting (hashes guarantee "what was audited is what is passed"), junk filtering (especially macOS `__MACOSX` / `._`), LLM oracles for signature detection, compliance, and agent-hijack guarding.
+- Target user "Joe": regular end-user (not dev) who downloads a zip/folder/AI-built project and needs protection before running it.
+- "Trust, then Certify" as the cultural standard. Every interaction recorded in tamper-proof `.raa` ledgers. The PDF (inaccessible here) is the April 2026 origin document for these ideas.
+
+**From RAA-NEWPATH-FORWARD.txt (critical long-term reference — always re-read when working on the new architecture):**
+- Full rationale, locked decisions, technical mapping (which functions live where: `generate_manifest`, `scan_compressed_archive`, `log_to_raa`, `list_ledger_files`, `resolve_vault_root`, Svelte handlers, etc.), naming conventions, Joe experience targets, constraints (preserve skipped logic as temporary holding pattern for now, zero-mutation, etc.), success criteria for Stage 1, and open/tabled questions.
+- Explicitly created so full context survives long gaps or context resets.
+- Junk filter list (`JUNK_NAMES`) must stay in sync between manifest generation and control manifest building (includes node_modules, .git, target, dist, __MACOSX, .DS_Store — last added 2026-05-30).
+
+**Permanent Anchors & Rules (re-affirmed):**
+- Read-only mandate, advisory-only (human is always the decision maker), dynamic Base URL (no hard-coded x.ai), `fs::canonicalize` for paths, respect user `vaultRootPath` (fallback `~/Documents/RAA_Vault`).
+- Strict git discipline from this file: local commits frequently, pushes only at clear milestones or end of day (ask first), good messages, clean trees before push. This project incurs real costs on GitHub pushes.
+- "Trust, then Certify." + the enduring principle about never letting a job appear successful if violations exist.
+
+### Current Environment & Tooling Notes for This Context
+- Always invoke Grok with project focus: `grok --cwd /Users/agent-naive/dev/RAA-Gatekeeper` (or `cd` first).
+- `grok inspect --cwd ...` (or via the full invocation) is the authoritative way to confirm context.
+- No project-specific AGENTS.md, .grok/config, or local rules loaded yet.
+- Memory is globally enabled (from user config); workspace-specific memory under `~/.grok/memory/` will use the git slug (`Agent-Naive/RAA-Gatekeeper`) once used in this CWD.
+- PDF on Desktop remains inaccessible in current tool environment — use RAA-Vision.md + RAA-NEWPATH-FORWARD.txt as authoritative proxies.
+
+### Open Questions / Next Priorities (Carried Forward + New from This Session)
+1. Stabilize **Stage 1 (~RAA-CONTROL-Manifest)**: Job folder creation on Start + writing the static `~RAA-CONTROL-Manifest.log` (full inventory + hierarchy using the same filters as auditing) as the very first artifact. Emit events for right-pane comfort feed.
+2. **Stage 2**: Wire the right pane as live emission log for .raa files as they are created (left pane stays "📡 Audited", bottom bar preserves skipped logic).
+3. Un-table and evolve **Ledger Browser + DNA Verification** for job folders + per-file reports (currently the biggest gap for post-facto usability).
+4. Address mandatory Settings page UX (reorganize to sections/tabs to eliminate long scrolling).
+5. DNA verification flow redesign now that reports live per-file inside job folders (manifest as single source of truth?).
+6. Watcher noise filtering improvements (editor temp files, etc.).
+7. Continue following the detailed constraints and success criteria in RAA-NEWPATH-FORWARD.txt.
+8. Consider adding project-level AGENTS.md or .grok rules now that we have strong focus here.
+
+### Recommendations for Future Grok Inference Sessions
+- **Always begin by reading the PERMANENT KNOWLEDGE section (top of this file) + the most recent session review(s).**
+- Re-read ROADMAP.md + the entire RAA-NEWPATH-FORWARD.txt before making changes to auditing flows, manifest writing, or ledger code.
+- Cross-reference the staged plan and "locked decisions" when implementing.
+- When testing, use the existing test directories (e.g. test-directory02) and re-arm the watcher after any renames/moves.
+- Maintain zero warnings, zero errors, and the read-only + advisory-only invariants.
+- For git: commit locally often; push only at natural checkpoints or explicit user request.
+- This document + RAA-NEWPATH-FORWARD.txt + ROADMAP.md are the primary mechanisms to survive context resets.
+
+**Overall Feeling:**  
+Excellent re-acquisition and focus switch. The project now has strong, self-contained long-term memory in its own files (especially this review log + the detailed NEWPATH-FORWARD spec). We have a clear picture of exactly where implementation left off and what the next concrete steps are in the New Path Forward. Ready to resume active development (most logically by tackling Stage 1 stabilization) with full context preserved for any future Grok session.
+
+---
+**End of 2026-06-06 Review**
+
+---
