@@ -6,7 +6,7 @@
 [![Backend: Rust](https://shields.io)](https://rust-lang.org)
 
 ## 📖 Overview
-**RAA-Gatekeeper** is a specialized security middleware designed to solve the "Trust Gap" between local codebases and AI Agents. Built on the **Restrictive Ability (RAA)** protocol, it serves as a **Read-Only Auditor**, ensuring that no code, terminal command, or archive is passed to an LLM without a forensic safety certification.
+**RAA-Gatekeeper** is a specialized security middleware designed to solve the "Trust Gap" between local codebases and AI Agents. Built on the **Restrictive Access Ability (RAA)** protocol, it serves as a **Read-Only Auditor**, ensuring that no code, terminal command, or archive is passed to an LLM without a forensic safety certification.
 
 ---
 

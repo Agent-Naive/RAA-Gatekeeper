@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::Emitter;
@@ -246,54 +247,72 @@ fn collect_audited_and_skipped_paths(
 /// for the control manifest. Uses simple 4-space indentation to create a
 /// "tabbed" visual effect that reflects the folder hierarchy.
 ///
-/// This version now includes two sections:
-///   1. Files to be audited
-///   2. Files to be skipped (non-matching extensions, after junk filtering)
-///
-/// Directories are shown with a trailing `/`.
-/// Clean 4-space indentation is used for a simple tabbed look.
-fn build_control_manifest(
+/// Builds the final ~RAA-CONTROL-Manifest.log with a DNA Registry section
+/// containing hashes for every file (audited + skipped) at the top.
+fn build_final_control_manifest_with_dna(
     root: &Path,
     allowed_extensions: &[String],
     source_folder_name: &str,
     job_name: &str,
-    _timestamp: &str,
+    timestamp: &str,
+    audited_hashes: &HashMap<PathBuf, String>,
+    skipped_hashes: &HashMap<PathBuf, String>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
 
     // Header
     lines.push("~RAA-CONTROL-Manifest.log".to_string());
-    lines.push(format!("Generated: {}", Local::now().format("%Y-%m-%d %H:%M:%S")));
+    lines.push(format!("Generated: {}", timestamp));  // Use the job timestamp for consistency
     lines.push(format!("Source: {}", root.display()));
     lines.push(format!("Job Folder: {}", job_name));
     lines.push(String::new());
 
+    // DNA Registry Section (hashes for quick lookup)
+    lines.push("DNA Registry (File → Hash):".to_string());
+    lines.push(String::new());
+
+    // Audited files first
+    let mut all_audited: Vec<_> = audited_hashes.keys().collect();
+    all_audited.sort();
+    for rel in all_audited {
+        if let Some(hash) = audited_hashes.get(rel) {
+            lines.push(format!("File: {}", rel.display()));
+            lines.push(format!("Hash: {}", hash));
+            lines.push(String::new());
+        }
+    }
+
+    // Skipped files
+    let mut all_skipped: Vec<_> = skipped_hashes.keys().collect();
+    all_skipped.sort();
+    for rel in all_skipped {
+        if let Some(hash) = skipped_hashes.get(rel) {
+            lines.push(format!("File: {}", rel.display()));
+            lines.push(format!("Hash: {}", hash));
+            lines.push(String::new());
+        }
+    }
+
+    lines.push(String::new());
+
+    // Directory structure sections (re-use existing tree logic)
     let (audited_rel_paths, skipped_rel_paths) =
         collect_audited_and_skipped_paths(root, allowed_extensions);
 
-    // ============================================================
-    // SECTION 1: Files to be audited
-    // ============================================================
     lines.push(format!(
         "Directory Structure ({} files to be audited):",
         audited_rel_paths.len()
     ));
     lines.push(String::new());
-
     lines.extend(build_tree_lines(source_folder_name, &audited_rel_paths));
 
     lines.push(String::new());
 
-    // ============================================================
-    // SECTION 2: Files to be skipped
-    // Only directories that actually contain skipped files are shown.
-    // ============================================================
     lines.push(format!(
         "Directory Structure ({} files to be skipped):",
         skipped_rel_paths.len()
     ));
     lines.push(String::new());
-
     lines.extend(build_tree_lines(source_folder_name, &skipped_rel_paths));
 
     lines.join("\n")
@@ -649,6 +668,8 @@ async fn generate_manifest(
     let (_audited_paths, skipped_rel_paths) =
         collect_audited_and_skipped_paths(&folder_path_buf, &allowed_extensions);
 
+    let mut skipped_hashes: HashMap<PathBuf, String> = HashMap::new();
+
     // Emit skipped events immediately so the UI's 🚫 SKIPPED area populates
     for rel in &skipped_rel_paths {
         let full_path = folder_path_buf.join(rel);
@@ -661,25 +682,7 @@ async fn generate_manifest(
         );
     }
 
-    // Build minimal hierarchical inventory (control manifest)
-    let manifest_content = build_control_manifest(
-        &folder_path_buf,
-        &allowed_extensions,
-        source_folder_name,
-        &job_name,
-        &timestamp,
-    );
-
-    // Write the static control manifest (always the same name)
-    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
-    match fs::write(&manifest_path, &manifest_content) {
-        Ok(_) => {
-            eprintln!("[RAA] Created control manifest at: {:?}", manifest_path);
-        }
-        Err(e) => {
-            eprintln!("[RAA] WARNING: Failed to write control manifest to {:?}: {}", manifest_path, e);
-        }
-    }
+    // Control manifest writing is deferred until the end so we can include all DNA hashes.
 
     // Continue with original processing...
     let mut target_files = Vec::new();
@@ -722,6 +725,7 @@ async fn generate_manifest(
             }
             let content = fs::read_to_string(&path).ok().unwrap_or_default();
             let hash = get_content_hash(&content);
+
             Some(FileJob {
                 path,
                 size: content.len(),
@@ -730,6 +734,14 @@ async fn generate_manifest(
             })
         })
         .collect();
+
+    // Build audited hashes map after parallel work (safer than capturing mutably in closure)
+    let mut audited_hashes: HashMap<PathBuf, String> = HashMap::new();
+    for job in &jobs {
+        if let Ok(rel) = job.path.strip_prefix(&folder_path_buf) {
+            audited_hashes.insert(rel.to_path_buf(), job.hash.clone());
+        }
+    }
 
     const BUCKET_LIMIT: usize = 10000;
 
@@ -1007,6 +1019,7 @@ async fn generate_manifest(
         let full_path = folder_path_buf.join(rel_path);
         let content = fs::read_to_string(&full_path).unwrap_or_default();
         let hash = get_content_hash(&content);
+        skipped_hashes.insert(rel_path.clone(), hash.clone());
 
         let skipped_report = format!(
             "--- RAA FILE ANALYSIS ---\n\
@@ -1033,6 +1046,32 @@ async fn generate_manifest(
             Err(e) => {
                 eprintln!("[RAA] WARNING: Failed to write skipped report {:?}: {}", target_path, e);
             }
+        }
+    }
+
+    // =============================================
+    // Finalize and write the ~RAA-CONTROL-Manifest.log
+    // with DNA Registry (hashes) at the top.
+    // This gives us a single static-named file per job
+    // containing the full directory structure + every hash.
+    // =============================================
+    let final_manifest = build_final_control_manifest_with_dna(
+        &folder_path_buf,
+        &allowed_extensions,
+        source_folder_name,
+        &job_name,
+        &timestamp,
+        &audited_hashes,
+        &skipped_hashes,
+    );
+
+    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
+    match fs::write(&manifest_path, &final_manifest) {
+        Ok(_) => {
+            eprintln!("[RAA] Finalized control manifest with DNA registry at: {:?}", manifest_path);
+        }
+        Err(e) => {
+            eprintln!("[RAA] WARNING: Failed to write final control manifest {:?}: {}", manifest_path, e);
         }
     }
 
@@ -1213,7 +1252,7 @@ async fn toggle_watcher(
                 println!("📡 RADAR: Event Detected: {:?}", event.kind);
                 for path in event.paths {
                     let path_str = path.to_string_lossy().to_string();
-                    if !path_str.contains("~") && !path_str.contains(".DS_Store") {
+                    if !path_str.contains(".DS_Store") {
                         println!("⚡ SPARK: Broadcasting DNA change: {}", path_str);
                         let _ = window_clone.emit("watcher-event", path_str);
                     }
