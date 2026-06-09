@@ -120,7 +120,7 @@ See [VAULT_ARCHITECTURE.md](VAULT_ARCHITECTURE.md) for the full detailed technic
 **Important Commitments**
 - Archive scanning ability is preserved (in-memory analysis of ZIP contents still works and will emit per-file .raa reports inside job folders).
 - The existing skipped-files logic and bottom-bar temporary holding pattern are preserved for future stages.
-- The right pane is initially repurposed strictly as a live "what I just did" comfort feed (showing .raa files as they are created in real time). It is not yet interactive/clickable.
+- The right pane is initially repurposed strictly as a live COMPLETED comfort feed (showing .raa files as they are created in real time). It is not yet interactive/clickable.
 
 **Enduring Principle (from the ALLSAFE era)**
 > A Certify job must never be allowed to appear successful if any audited file contains a violation. This principle must be enforced in the new per-file + job folder model.
@@ -132,7 +132,7 @@ See [VAULT_ARCHITECTURE.md](VAULT_ARCHITECTURE.md) for the full detailed technic
 Full technical details, locked decisions, constraints, and in-depth rationale live in [VAULT_ARCHITECTURE.md](VAULT_ARCHITECTURE.md). The summary below is for high-level visibility only.
 
 - **Stage 1: ~RAA-CONTROL-Manifest** — Create dated job folder + write static `~RAA-CONTROL-Manifest.log` (inventory + hierarchy) as the very first artifact. **Status: Initial version complete** (inventory written early; later finalized with DNA Registry at job end).
-- **Stage 2: Real-Time Right Pane Comfort Feed** — Show individual .raa files being emitted in real time during long jobs. **Status: In progress / partial**.
+- **Stage 2: Real-Time Right Pane Comfort Feed (COMPLETED pane)** — Show individual .raa files being emitted in real time during long jobs. **Status: In progress / partial**.
 - **Stage 3: Per-File .raa Writing + Job Folders** — Emit individual rich `.raa` reports (with DNA) inside the job folder, mirroring source hierarchy where possible. **Status: Core emission working for Certify and Archive**.
 - **Stage 4: Archive Path Adaptation** — Ensure ZIP scanning emits per-file .raa inside job folders with appropriate special handling. **Status: In progress**.
 - **Stage 5: Vault Browser Evolution for Job Folders** — Make the vault UI understand job folders as containers, with the control manifest prominently visible. **Status: Explicitly tabled** until prior stages are stable. See VAULT_ARCHITECTURE.md.

@@ -409,7 +409,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - Every file that receives LLM forensic analysis (Certify folder or inside Archive) produces its own dedicated `.raa` containing full oracle analysis paragraph + clear verdict + its own DNA (SHA-256).
 - All artifacts for one user-initiated job are grouped inside a **dated Job Folder** inside the user's RAA-Vault (e.g., `MyProject-20260606-123456/` or `cool-repo.zip-...`).
 - As the very first action on "Start Certification" or "Select ZIP": create the dated job folder + write a static-named `~RAA-CONTROL-Manifest.log` (the `~` prefix forces it to sort to the top in Finder). This becomes the permanent audit control sheet / master inventory + hierarchy declaration for the entire job.
-- Right pane is initially repurposed as a live "what I just did" comfort feed (shows .raa files being emitted in real time). Not yet clickable/interactive ("YET").
+- Right pane is initially repurposed as a live COMPLETED comfort feed (shows .raa files being emitted in real time). Not yet clickable/interactive ("YET").
 - Hierarchy mirroring inside job folders is strongly preferred for duplicate-name safety and familiar after-action review.
 - Archive (ZIP) scanning must continue to work (in-memory, no full extraction) and emit per-file .raa inside the job folder.
 - Enduring principle (from ALLSAFE era, must be enforced in new model): *A Certify job must never be allowed to appear successful if any audited file contains a violation.*

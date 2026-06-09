@@ -572,6 +572,8 @@ async fn audit_command(
     base_url: String,
     model_name: String,
     vault_root_path: String,
+    _debug_raa: bool,   // accepted for call-site uniformity (frontend always sends both flags)
+    debug_oracle: bool,
 ) -> Result<RAAReport, String> {
     let hash = get_content_hash(&command_str);
 
@@ -590,6 +592,7 @@ async fn audit_command(
         &base_url,
         &model_name,
         &command_str,
+        debug_oracle,
     )
     .await?;
 
@@ -603,6 +606,8 @@ async fn scan_file_integrity(
     base_url: String,
     model_name: String,
     vault_root_path: String,
+    _debug_raa: bool,   // accepted for call-site uniformity (frontend always sends both flags)
+    debug_oracle: bool,
 ) -> Result<RAAReport, String> {
     let path = PathBuf::from(&file_path);
     let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
@@ -619,6 +624,7 @@ async fn scan_file_integrity(
         &base_url,
         &model_name,
         &target_label,
+        debug_oracle,
     )
     .await?;
     let path = log_to_raa("analyze", &target_label, &hash, &report.reasoning, &vault_root_path);
@@ -632,15 +638,18 @@ async fn call_llm_auditor(
     base_url: &str,
     model_name: &str,
     target: &str,
+    debug_oracle: bool,
 ) -> Result<RAAReport, String> {
     let api_key = env::var("GROK_API_KEY").unwrap_or_default();
     let client = reqwest::Client::new();
 
-    eprintln!("[RAA-ORACLE] call_llm_auditor: context_type='{}', target='{}'", context_type, target);
-    eprintln!("[RAA-ORACLE]   base_url configured in UI: {}", base_url);
-    eprintln!("[RAA-ORACLE]   GROK_API_KEY present in env: {}", !api_key.is_empty());
-    if api_key.is_empty() {
-        eprintln!("[RAA-ORACLE]   WARNING: No GROK_API_KEY in environment. Sending empty Bearer token. This often breaks custom base_urls.");
+    if debug_oracle {
+        eprintln!("[RAA-ORACLE] call_llm_auditor: context_type='{}', target='{}'", context_type, target);
+        eprintln!("[RAA-ORACLE]   base_url configured in UI: {}", base_url);
+        eprintln!("[RAA-ORACLE]   GROK_API_KEY present in env: {}", !api_key.is_empty());
+        if api_key.is_empty() {
+            eprintln!("[RAA-ORACLE]   WARNING: No GROK_API_KEY in environment. Sending empty Bearer token. This often breaks custom base_urls.");
+        }
     }
 
     // HARDENED PROMPT: Forces technical depth
@@ -663,7 +672,9 @@ async fn call_llm_auditor(
         )
     };
 
-    eprintln!("[RAA-ORACLE]   Sending request to LLM... (model={})", model_name);
+    if debug_oracle {
+        eprintln!("[RAA-ORACLE]   Sending request to LLM... (model={})", model_name);
+    }
 
     let response = client
         .post(base_url)
@@ -684,14 +695,20 @@ async fn call_llm_auditor(
         .send()
         .await
         .map_err(|e| {
-            eprintln!("[RAA-ORACLE]   HTTP SEND ERROR to oracle: {}", e);
+            if debug_oracle {
+                eprintln!("[RAA-ORACLE]   HTTP SEND ERROR to oracle: {}", e);
+            }
             e.to_string()
         })?;
 
-    eprintln!("[RAA-ORACLE]   HTTP response status from oracle: {}", response.status());
+    if debug_oracle {
+        eprintln!("[RAA-ORACLE]   HTTP response status from oracle: {}", response.status());
+    }
 
     let raw: serde_json::Value = response.json().await.map_err(|e| {
-        eprintln!("[RAA-ORACLE]   JSON parse error from oracle response: {}", e);
+        if debug_oracle {
+            eprintln!("[RAA-ORACLE]   JSON parse error from oracle response: {}", e);
+        }
         e.to_string()
     })?;
 
@@ -703,26 +720,30 @@ async fn call_llm_auditor(
         .and_then(|m| m.get("content"))
         .and_then(|c| c.as_str());
     
-    eprintln!("[RAA-ORACLE]   Response has 'choices': {}", has_choices);
-    eprintln!("[RAA-ORACLE]   Extracted content present: {}", content_path.is_some());
-    if content_path.is_none() {
-        eprintln!("[RAA-ORACLE]   FULL RAW RESPONSE (first 2000 chars): {}", 
-            serde_json::to_string(&raw).unwrap_or_default().chars().take(2000).collect::<String>());
+    if debug_oracle {
+        eprintln!("[RAA-ORACLE]   Response has 'choices': {}", has_choices);
+        eprintln!("[RAA-ORACLE]   Extracted content present: {}", content_path.is_some());
+        if content_path.is_none() {
+            eprintln!("[RAA-ORACLE]   FULL RAW RESPONSE (first 2000 chars): {}", 
+                serde_json::to_string(&raw).unwrap_or_default().chars().take(2000).collect::<String>());
+        }
     }
 
     let ai_response = content_path
         .unwrap_or("ORACLE_ERROR: failed to get content from LLM response")
         .to_string();
 
-    if ai_response.starts_with("ORACLE_ERROR") {
-        eprintln!("[RAA-ORACLE]   *** ORACLE CALL FAILED - not falling back to SAFE anymore ***");
-    } else if content_path.is_none() {
-        eprintln!("[RAA-ORACLE]   *** FALLING BACK (unexpected) ***");
-    }
-
     let is_violation = ai_response.to_uppercase().contains("VIOLATION");
 
-    eprintln!("[RAA-ORACLE]   Final ai_response length: {}, contains VIOLATION: {}", ai_response.len(), is_violation);
+    if debug_oracle {
+        if ai_response.starts_with("ORACLE_ERROR") {
+            eprintln!("[RAA-ORACLE]   *** ORACLE CALL FAILED - not falling back to SAFE anymore ***");
+        } else if content_path.is_none() {
+            eprintln!("[RAA-ORACLE]   *** FALLING BACK (unexpected) ***");
+        }
+
+        eprintln!("[RAA-ORACLE]   Final ai_response length: {}, contains VIOLATION: {}", ai_response.len(), is_violation);
+    }
 
     Ok(RAAReport {
         verdict: if is_violation {
@@ -814,6 +835,8 @@ async fn scan_compressed_archive(
     base_url: String,
     model_name: String,
     vault_root_path: String,
+    debug_raa: bool,
+    debug_oracle: bool,
 ) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -871,8 +894,10 @@ async fn scan_compressed_archive(
     );
     let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
     if let Err(e) = fs::write(&manifest_path, &initial_manifest) {
-        eprintln!("[RAA] WARNING: Failed to write initial ZIP control manifest: {}", e);
-    } else {
+        if debug_raa {
+            eprintln!("[RAA] WARNING: Failed to write initial ZIP control manifest: {}", e);
+        }
+    } else if debug_raa {
         eprintln!("[RAA] Wrote INITIAL ~RAA-CONTROL-Manifest.log for archive at: {:?}", manifest_path);
         let _ = window.emit(
             "scan-event",
@@ -918,7 +943,7 @@ async fn scan_compressed_archive(
                 audited_hashes.insert(std::path::PathBuf::from(&name), hash.clone());
 
                 let report =
-                    call_llm_auditor(&content, "archive internal", &base_url, &model_name, &name)
+                    call_llm_auditor(&content, "archive internal", &base_url, &model_name, &name, debug_oracle)
                         .await?;
 
                 if report.is_error {
@@ -949,7 +974,9 @@ async fn scan_compressed_archive(
                 }
                 match fs::write(&target_path, &analysis_block) {
                     Ok(_) => {
-                        eprintln!("[RAA] Wrote per-file archive report inside job folder: {:?}", target_path);
+                        if debug_raa {
+                            eprintln!("[RAA] Wrote per-file archive report inside job folder: {:?}", target_path);
+                        }
                         let _ = window.emit(
                             "scan-event",
                             ScanEvent {
@@ -961,7 +988,9 @@ async fn scan_compressed_archive(
                         );
                     }
                     Err(e) => {
-                        eprintln!("[RAA] WARNING: Failed to write per-file archive report {:?}: {}", target_path, e);
+                        if debug_raa {
+                            eprintln!("[RAA] WARNING: Failed to write per-file archive report {:?}: {}", target_path, e);
+                        }
                     }
                 }
             }
@@ -984,8 +1013,10 @@ async fn scan_compressed_archive(
     );
     let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
     if let Err(e) = fs::write(&manifest_path, &final_manifest) {
-        eprintln!("[RAA] WARNING: Failed to finalize ~RAA-CONTROL-Manifest.log for archive: {}", e);
-    } else {
+        if debug_raa {
+            eprintln!("[RAA] WARNING: Failed to finalize ~RAA-CONTROL-Manifest.log for archive: {}", e);
+        }
+    } else if debug_raa {
         eprintln!("[RAA] Finalized ~RAA-CONTROL-Manifest.log for archive (with DNA) at: {:?}", manifest_path);
         let _ = window.emit(
             "scan-event",
@@ -1003,8 +1034,10 @@ async fn scan_compressed_archive(
     let report_filename = format!("{}-archive-{}.raa", sanitize_for_filename(zip_file_name), timestamp);
     let report_path = job_folder.join(report_filename);
     if let Err(e) = fs::write(&report_path, &final_text) {
-        eprintln!("[RAA] WARNING: Failed to write aggregated archive report to job folder: {}", e);
-    } else {
+        if debug_raa {
+            eprintln!("[RAA] WARNING: Failed to write aggregated archive report to job folder: {}", e);
+        }
+    } else if debug_raa {
         eprintln!("[RAA] Wrote aggregated archive report inside job folder: {:?}", report_path);
     }
 
@@ -1031,6 +1064,8 @@ async fn generate_manifest(
     base_url: String,
     model_name: String,
     vault_root_path: String,
+    debug_raa: bool,
+    debug_oracle: bool,
 ) -> Result<RAAReport, String> {
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
 
@@ -1097,9 +1132,10 @@ async fn generate_manifest(
     let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
     match fs::write(&manifest_path, &initial_manifest) {
         Ok(_) => {
-            eprintln!("[RAA] Wrote INITIAL ~RAA-CONTROL-Manifest.log (inventory + hierarchy) at: {:?}", manifest_path);
-            // Emit a scan-event so future right-pane "comfort feed" (Stage 2) can surface it.
-            // Using a distinct status for now; the placeholder right pane will ignore it.
+            if debug_raa {
+                eprintln!("[RAA] Wrote INITIAL ~RAA-CONTROL-Manifest.log (inventory + hierarchy) at: {:?}", manifest_path);
+            }
+            // Emit for the Stage 2 live COMPLETED comfort feed (right pane).
             let _ = window.emit(
                 "scan-event",
                 ScanEvent {
@@ -1111,7 +1147,9 @@ async fn generate_manifest(
             );
         }
         Err(e) => {
-            eprintln!("[RAA] WARNING: Failed to write initial control manifest {:?}: {}", manifest_path, e);
+            if debug_raa {
+                eprintln!("[RAA] WARNING: Failed to write initial control manifest {:?}: {}", manifest_path, e);
+            }
         }
     }
 
@@ -1145,17 +1183,21 @@ async fn generate_manifest(
         }
     }
 
-    let jobs: Vec<FileJob> = target_files
+    // Partition: ZIPs are handled separately as archive containers (see CERTIFY_ZIP_BUCKETING.md).
+    // Only non-ZIP files go through bucketing and Oracle in the Certify routine.
+    let mut regular_target_files: Vec<(PathBuf, String)> = vec![];
+    let mut zip_paths: Vec<PathBuf> = vec![];
+    for (path, ext) in target_files {
+        if ext == ".zip" {
+            zip_paths.push(path);
+        } else {
+            regular_target_files.push((path, ext));
+        }
+    }
+
+    let jobs: Vec<FileJob> = regular_target_files
         .into_par_iter()
-        .filter_map(|(path, ext)| {
-            if ext == ".zip" {
-                return Some(FileJob {
-                    path,
-                    size: 0,
-                    hash: "ZIP".into(),
-                    content: "".into(),
-                });
-            }
+        .filter_map(|(path, _ext)| {
             let content = fs::read_to_string(&path).ok().unwrap_or_default();
             let hash = get_content_hash(&content);
 
@@ -1183,17 +1225,6 @@ async fn generate_manifest(
     let mut current_size = 0;
 
     for job in jobs {
-        if job.hash == "ZIP" {
-            // ZIP files always get their own dedicated bucket
-            if !current_bucket.is_empty() {
-                buckets.push(current_bucket);
-                current_bucket = Vec::new();
-                current_size = 0;
-            }
-            buckets.push(vec![job]);
-            continue;
-        }
-
         // Large file that exceeds the entire bucket limit
         if job.size > BUCKET_LIMIT {
             // Flush current bucket first if it has anything
@@ -1296,7 +1327,7 @@ async fn generate_manifest(
             );
         }
 
-        let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest")
+        let report = call_llm_auditor(&batch_text, "folder", &base_url, &model_name, "Manifest", debug_oracle)
             .await
             .unwrap_or(RAAReport {
                 verdict: "SAFE".into(),
@@ -1373,6 +1404,8 @@ async fn generate_manifest(
                 (fallback_verdict, fallback_text)
             };
 
+            // Regular (non-ZIP) per-file report. ZIPs are now handled outside the bucketing/Oracle path
+            // in Certify (see CERTIFY_ZIP_BUCKETING.md for the purged dedicated-bucket logic).
             let analysis_block = format!(
                 "--- RAA FILE ANALYSIS ---\n\
                  File: {}\n\
@@ -1385,6 +1418,7 @@ async fn generate_manifest(
                 verdict,
                 analysis_text
             );
+
             report_entries.push_str(&analysis_block);
 
             // Write individual per-file report inside the job folder, preserving source hierarchy.
@@ -1397,9 +1431,12 @@ async fn generate_manifest(
             if let Some(parent) = target_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
+
             match fs::write(&target_path, &analysis_block) {
                 Ok(_) => {
-                    eprintln!("[RAA] Wrote per-file audited report: {:?}", target_path);
+                    if debug_raa {
+                        eprintln!("[RAA] Wrote per-file audited report: {:?}", target_path);
+                    }
                     let _ = window.emit(
                         "scan-event",
                         ScanEvent {
@@ -1411,7 +1448,9 @@ async fn generate_manifest(
                     );
                 }
                 Err(e) => {
-                    eprintln!("[RAA] WARNING: Failed to write per-file audited report {:?}: {}", target_path, e);
+                    if debug_raa {
+                        eprintln!("[RAA] WARNING: Failed to write per-file audited report {:?}: {}", target_path, e);
+                    }
                 }
             }
 
@@ -1436,18 +1475,84 @@ async fn generate_manifest(
 
     let full_report = format!("{}{}", overall_header, report_entries);
 
-    // Write the report inside the job folder we created at the start of this function.
-    // This makes the control manifest + the main report live together.
-    // Future work: split this into individual per-file .raa files that mirror source hierarchy
-    // inside the job folder (e.g. job-folder/src/utils/foo.rs.raa).
+    // Write the (legacy aggregated) certify report inside the job folder.
+    // Individual per-file .raa files (mirroring source hierarchy) are already written above
+    // for proper DNA tracking and the new granular vault model.
     let report_filename = format!("certify-report-{}.raa", timestamp);
     let report_path = job_folder.join(report_filename);
     match fs::write(&report_path, &full_report) {
         Ok(_) => {
-            eprintln!("[RAA] Wrote certify report to: {:?}", report_path);
+            if debug_raa {
+                eprintln!("[RAA] Wrote certify report to: {:?}", report_path);
+            }
         }
         Err(e) => {
-            eprintln!("[RAA] WARNING: Failed to write certify report to {:?}: {}", report_path, e);
+            if debug_raa {
+                eprintln!("[RAA] WARNING: Failed to write certify report to {:?}: {}", report_path, e);
+            }
+        }
+    }
+
+    // Handle ZIP containers found during this Certify run (purged from bucketing/Oracle path).
+    // See CERTIFY_ZIP_BUCKETING.md for the removed dedicated-bucket logic.
+    for zip_path in zip_paths {
+        let rel_path = match zip_path.strip_prefix(&folder_path_buf) {
+            Ok(p) => p.to_path_buf(),
+            Err(_) => zip_path.file_name().map(PathBuf::from).unwrap_or_else(|| zip_path.clone()),
+        };
+        let target_path = job_folder.join(&rel_path).with_extension("raa");
+        if let Some(parent) = target_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+
+        let container_report = format!(
+            r#"### ARCHIVE CONTAINER DETECTED DURING CERTIFY
+This ZIP was encountered while certifying the folder.
+Deep per-file analysis of its *contents* was not performed during this Certify run
+(to keep the broad certification focused and avoid partial structured parses).
+
+To perform full per-file forensic analysis of the files inside this archive
+(with its own dated job folder under the Archive/ sub), run a dedicated Archive audit on this file:
+
+ACTION:ARCHIVE_AUDIT:{}
+
+(The dedicated Archive mode will emit clean per-file .raa reports inside a proper job folder.)
+
+--- RAA FILE ANALYSIS ---
+File: {}
+Hash: ZIP
+Verdict: ARCHIVE CONTAINER (deep analysis recommended via Archive mode)
+Analysis:
+This is an archive container detected during Certify.
+No deep per-file analysis of its contents was performed in this run.
+Run a dedicated Archive audit on this file (using the link above or the Archive tab)
+for full forensic analysis of the archive contents.
+
+------------------------
+"#,
+            zip_path.display(), zip_path.display()
+        );
+
+        match fs::write(&target_path, &container_report) {
+            Ok(_) => {
+                if debug_raa {
+                    eprintln!("[RAA] Wrote archive container report: {:?}", target_path);
+                }
+                let _ = window.emit(
+                    "scan-event",
+                    ScanEvent {
+                        path: target_path.to_string_lossy().into(),
+                        status: "PerFileReport".into(),
+                        verdict: Some("ARCHIVE CONTAINER".into()),
+                        reason: None,
+                    },
+                );
+            }
+            Err(e) => {
+                if debug_raa {
+                    eprintln!("[RAA] WARNING: Failed to write archive container report {:?}: {}", target_path, e);
+                }
+            }
         }
     }
 
@@ -1483,7 +1588,9 @@ async fn generate_manifest(
 
         match fs::write(&target_path, &skipped_report) {
             Ok(_) => {
-                eprintln!("[RAA] Wrote skipped report: {:?}", target_path);
+                if debug_raa {
+                    eprintln!("[RAA] Wrote skipped report: {:?}", target_path);
+                }
                 let _ = window.emit(
                     "scan-event",
                     ScanEvent {
@@ -1495,7 +1602,9 @@ async fn generate_manifest(
                 );
             }
             Err(e) => {
-                eprintln!("[RAA] WARNING: Failed to write skipped report {:?}: {}", target_path, e);
+                if debug_raa {
+                    eprintln!("[RAA] WARNING: Failed to write skipped report {:?}: {}", target_path, e);
+                }
             }
         }
     }
@@ -1519,7 +1628,9 @@ async fn generate_manifest(
     let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
     match fs::write(&manifest_path, &final_manifest) {
         Ok(_) => {
-            eprintln!("[RAA] Finalized control manifest with DNA registry at: {:?}", manifest_path);
+            if debug_raa {
+                eprintln!("[RAA] Finalized control manifest with DNA registry at: {:?}", manifest_path);
+            }
             let _ = window.emit(
                 "scan-event",
                 ScanEvent {
@@ -1533,7 +1644,9 @@ async fn generate_manifest(
             // Final step just adds the DNA Registry section.
         }
         Err(e) => {
-            eprintln!("[RAA] WARNING: Failed to write final control manifest {:?}: {}", manifest_path, e);
+            if debug_raa {
+                eprintln!("[RAA] WARNING: Failed to write final control manifest {:?}: {}", manifest_path, e);
+            }
         }
     }
 

@@ -30,7 +30,7 @@ User's explicit reasons (captured during deep reasoning):
 - Each file owning its own hash in its own vault entry is easier to deal with long-term for DNA verification.
 - After a run of 80 files (75 reports + 5 skipped), it is far easier to do post-facto analysis, after-action reporting, or find a singular culprit when you have discrete files + a master control manifest than when you have to parse one giant monolithic report.
 - Job folders + hierarchy mirroring make the vault feel organized and make duplicate filename situations safe.
-- The right pane provides real-time comfort ("here is what I just did") while a long job is running.
+- The right pane provides real-time comfort (COMPLETED feed) while a long job is running.
 
 This is a personal hobby / re-learning / "masterpiece" project. Coding cost and long-term maintenance burden are secondary to building something the creator is proud of and that genuinely protects "Joe".
 
@@ -65,7 +65,7 @@ This is a personal hobby / re-learning / "masterpiece" project. Coding cost and 
    - DNA verification for container-origin files will still need special handling (📦 states, limited re-verifiability).
 
 6. Right Pane Role (Current vs Future)
-   - **Current (near-term):** Pure live comfort / "what I just did" feed.
+   - **Current (near-term):** Pure live COMPLETED comfort feed.
      - Shows .raa files being created in real time as the job progresses.
      - Gives the user visible forward progress and psychological comfort during long Certify or Archive runs.
      - Not intended for click-to-open or deep interaction yet (the "YET" <wink>).
@@ -225,6 +225,8 @@ When Stage 1 is complete, the following should be true:
 - **Why Deferred**: Not blocking the current New Path Forward stages (manifests, per-file reports, job folders). This is a polish + architectural consistency task for the Integrity Guard area.
 
 **Additional Note (Tabled for Discussion):** The Forensic Vault safeguard check (subs existence + exercising the creation logic) lives inside the dev-only Integrity Guard. It is intentionally invisible in release builds. See the expanded dev-only enforcement notes and tabled suggestions in ROADMAP.md and the code comments in +page.svelte.
+
+See CERTIFY_ZIP_BUCKETING.md for the preserved historical details of how .zip files were specially collected and given dedicated buckets inside the Certify bucketing logic (before the shift to container-only treatment + separate Archive audits).
 - **Related**: See also the "Known Polish Items" section in ROADMAP.md.
 - No existing skipped logic, DNA logic, or permanent anchors have been broken.
 - Joe can open the job folder in Finder and immediately see the control sheet at the top.

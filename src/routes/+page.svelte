@@ -53,6 +53,10 @@
   let watcherHistory = $state<string[]>([]);
   let showHistoryList = $state(false);
 
+  // Dev-only debug toggles (only exposed in dev builds / localhost)
+  let debugRaa = $state(localStorage.getItem("raa_debug_raa") === "true");
+  let debugOracle = $state(localStorage.getItem("raa_debug_oracle") === "true");
+
   async function startAuditFromQueue(file: string) {
     activeTab = "analyze";
 
@@ -77,6 +81,11 @@
     })
       .then(() => console.log("🕵️ UI: Watcher Handshake SUCCESS"))
       .catch((e) => console.error("🚨 UI: Watcher Handshake FAILED", e));
+  });
+
+  $effect(() => {
+    localStorage.setItem("raa_debug_raa", debugRaa.toString());
+    localStorage.setItem("raa_debug_oracle", debugOracle.toString());
   });
 
   let lastWatchedFile = $state("");
@@ -235,7 +244,7 @@
   let activeScrollContainer: HTMLElement | undefined = $state();
   let rightScrollContainer: HTMLElement | undefined = $state();
 
-  // Stage 2: Live "What I Just Did" comfort feed (right pane)
+  // Stage 2: Live COMPLETED comfort feed (right pane)
   let liveFeed = $state<{ text: string; skipped?: boolean; fullPath?: string }[]>([]);
   let viewedFromFeed = $state<null | { text: string; content: string; isSkipped?: boolean }>(null);
 
@@ -256,13 +265,18 @@
           activeFiles = [...activeFiles, path];
           scrollToBottom(activeScrollContainer);
         } else if (status === "ControlManifest" || status === "PerFileReport" || status === "Report") {
-          // Stage 2: live "Just Done" feed - audited reports + manifests
+          // Stage 2: live COMPLETED feed - audited reports + manifests
           let text;
           if (status === "ControlManifest") {
             text = `📋 ${path.split('/').pop() || path}`;
           } else {
             const shortVerdict = verdict ? verdict.replace("RAA VIOLATION DETECTED", "VIOLATION FOUND").replace("ALL SAFE", "CERTIFIED") : "";
-            text = `📝 ${path.split('/').pop() || path} (${shortVerdict})`;
+            const baseName = path.split('/').pop() || path;
+            if (path.endsWith('.zip') || shortVerdict.includes('ARCHIVE CONTAINER')) {
+              text = `📦 ${baseName} (archive container — deep audit available)`;
+            } else {
+              text = `📝 ${baseName} (${shortVerdict})`;
+            }
           }
           // Update manifest in place if final version arrives (to avoid duplicate line)
           if (status === "ControlManifest") {
@@ -372,6 +386,35 @@
       // This way the main report breakdown stays visible.
     } catch (e) {
       certMsg = `Error reading ${item.text}: ${e}`;
+    }
+  }
+
+  async function launchArchiveAuditFromReport(content: string) {
+    const match = content.match(/ACTION:ARCHIVE_AUDIT:(.+)/);
+    if (!match) return;
+    const zipPath = match[1].trim();
+
+    // Close the .raa report viewer (the "toaster"/glass pane) and clear the feed
+    // because we are starting a brand new Archive Audit process.
+    viewedFromFeed = null;
+    liveFeed = [];
+    activeFiles = [];
+
+    try {
+      await invoke("scan_compressed_archive", {
+        zipPath,
+        allowedExtensions: allowedExts,
+        baseUrl,
+        modelName,
+        vaultRootPath,
+        debugRaa,
+        debugOracle,
+      });
+      // The archive command manages its own timers, events, and feed population.
+      // Clearing above ensures the previous Certify COMPLETED feed does not mix
+      // with the new archive audit activity.
+    } catch (e) {
+      certMsg = `Error launching Archive audit for ${zipPath}: ${e}`;
     }
   }
 
@@ -568,7 +611,9 @@
         commandStr: commandInput,
         baseUrl,
         modelName,
-        vaultRootPath
+        vaultRootPath,
+        debugRaa,
+        debugOracle,
       });
       
       // 3. COMPLETION: The Oracle has spoken
@@ -621,7 +666,9 @@
           filePath: selected,
           baseUrl,
           modelName,
-          vaultRootPath
+          vaultRootPath,
+          debugRaa,
+          debugOracle,
         });
         // 3. COMPLETION: The Oracle has spoken
         stopTotalTimer();
@@ -661,7 +708,9 @@
           allowedExtensions: allowedExts,
           baseUrl,
           modelName,
-          vaultRootPath
+          vaultRootPath,
+          debugRaa,
+          debugOracle,
         });
 
         // Use the same top-of-app toaster pattern as Certify for the overall result.
@@ -704,7 +753,9 @@
           allowedExtensions: allowedExts,
           baseUrl,
           modelName,
-          vaultRootPath
+          vaultRootPath,
+          debugRaa,
+          debugOracle,
         });
 
         // Handle the new richer return type
@@ -1081,9 +1132,9 @@
               </div>
             </div>
             <div class="pane">
-              <!-- Stage 2: Real-time "What I Just Did" comfort feed (live as reports & manifests are written) -->
+              <!-- Stage 2: Real-time COMPLETED comfort feed (live as reports & manifests are written) -->
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <h4>✅&nbsp;&nbsp; Just Done</h4>
+                <h4>✅&nbsp;&nbsp; COMPLETED</h4>
                 {#if liveFeed.length > 0}
                   <button class="small-btn" onclick={() => { liveFeed = []; viewedFromFeed = null; activeFiles = []; }}>clear feed</button>
                 {/if}
@@ -1139,9 +1190,9 @@
               </div>
             </div>
             <div class="pane">
-              <!-- Stage 2: Real-time "What I Just Did" comfort feed (live as reports & manifests are written) -->
+              <!-- Stage 2: Real-time COMPLETED comfort feed (live as reports & manifests are written) -->
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
-                <h4>✅&nbsp;&nbsp; Just Done</h4>
+                <h4>✅&nbsp;&nbsp; COMPLETED</h4>
                 {#if liveFeed.length > 0}
                   <button class="small-btn" onclick={() => { liveFeed = []; viewedFromFeed = null; activeFiles = []; }}>clear feed</button>
                 {/if}
@@ -1366,6 +1417,38 @@
                 </div>
               </div>
             </div>
+
+            {#if isDev}
+            <div class="filter-logic-zone">
+              <h4 class="filter-title">🛠️ Dev Only Debug Controls</h4>
+
+              <div class="watcher-controls flex gap-20 items-center mb-8">
+                <label class="toggle-label flex items-center gap-8 cursor-pointer">
+                  <input type="checkbox" bind:checked={debugRaa} />
+                  [RAA] logs:
+                  <span class={debugRaa ? "text-success" : "text-danger"}>
+                    {debugRaa ? "ENABLED" : "DISABLED"}
+                  </span>
+                </label>
+              </div>
+              <p class="filter-hint text-11 mb-16">
+                Operational tracing for manifests, per-file reports, job folder creation, and skipped file handling.
+              </p>
+
+              <div class="watcher-controls flex gap-20 items-center mb-8">
+                <label class="toggle-label flex items-center gap-8 cursor-pointer">
+                  <input type="checkbox" bind:checked={debugOracle} />
+                  [RAA-ORACLE] logs:
+                  <span class={debugOracle ? "text-success" : "text-danger"}>
+                    {debugOracle ? "ENABLED" : "DISABLED"}
+                  </span>
+                </label>
+              </div>
+              <p class="filter-hint text-11">
+                Very verbose step-by-step tracing of every LLM call (request, response status, raw output on failure, parse decisions).
+              </p>
+            </div>
+            {/if}
           </div>
         </section>
         {:else if activeTab === "vault"}
@@ -1576,6 +1659,19 @@
           <div class="vault-body">
             <pre class="raw-forensics">{viewedFromFeed.content}</pre>
           </div>
+
+          {#if viewedFromFeed.content.includes('ACTION:ARCHIVE_AUDIT:')}
+            <button
+              class="primary-btn"
+              style="margin: 8px 0 12px;"
+              onclick={() => launchArchiveAuditFromReport(viewedFromFeed.content)}
+            >
+              ▶ Run Dedicated Archive Audit on this file
+            </button>
+            <div class="text-11" style="opacity:0.7; margin-bottom:8px;">
+              This will create a separate dated job folder under the Archive/ sub with full per-file reports.
+            </div>
+          {/if}
       
           <button class="vault-close" onclick={() => viewedFromFeed = null}
             >X CLOSE VIEW</button
