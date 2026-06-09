@@ -888,25 +888,59 @@
   // Group reports by the typed sub-directory (Certify, Archive, etc.) so the
   // Forensic Vault acts more like a finder showing the directory structure
   // under RAA-Vault.
+  // Updated for Phase 2: now also groups by dated job folder inside each sub,
+  // with ~RAA-CONTROL-Manifest.log as the prominent root/anchor for each job folder.
   // VAULT-CODE-SAFEGUARD-START (grouping part)
   // !!! PROTECTED BY "📜 Forensic Vault" INTEGRITY CHECK !!!
   // Do not delete or alter this grouping. It makes the subs visible as directories in the finder.
   // If removed, the structure the integrity check expects may be affected in UI/tests.
   function getGroupedVaultReports() {
     const ops = ['Certify', 'Archive', 'Analyze', 'Audit'];
-    const groups: Record<string, any[]> = { Certify: [], Archive: [], Analyze: [], Audit: [], Other: [] };
+    // Build nested structure: sub -> jobFolder -> { manifest, reports }
+    // This uses ~RAA-CONTROL-Manifest.log as the anchor/root for each job folder.
+    // Client-side grouping from the flat list returned by list_vault_files (which already recurses into job folders).
+    // See previous design discussion for Phase 2 accordion + manifest-as-root.
+    const groups: Record<string, Record<string, {manifest: any | null, reports: any[]}>> = {
+      Certify: {}, Archive: {}, Analyze: {}, Audit: {}, Other: {}
+    };
+
     for (const f of filteredVaultFiles()) {
       const p = (f.path || '').toString();
       let placed = false;
+
       for (const op of ops) {
-        if (p.includes(`/${op}/`)) {
-          groups[op].push(f);
+        const opMarker = `/${op}/`;
+        const idx = p.indexOf(opMarker);
+        if (idx !== -1) {
+          // Extract job folder: the next path segment after the sub
+          const afterOp = p.substring(idx + opMarker.length);
+          const parts = afterOp.split('/').filter(Boolean);
+          const jobFolder = parts.length > 0 ? parts[0] : 'root';
+
+          if (!groups[op][jobFolder]) {
+            groups[op][jobFolder] = { manifest: null, reports: [] };
+          }
+
+          const isManifest = f.name === '~RAA-CONTROL-Manifest.log' || f.name.startsWith('~RAA-CONTROL-Manifest');
+          if (isManifest) {
+            groups[op][jobFolder].manifest = f;
+          } else {
+            groups[op][jobFolder].reports.push(f);
+          }
           placed = true;
           break;
         }
       }
-      if (!placed) groups.Other.push(f);
+
+      if (!placed) {
+        // Fallback to Other, treat as root
+        if (!groups.Other['root']) {
+          groups.Other['root'] = { manifest: null, reports: [] };
+        }
+        groups.Other['root'].reports.push(f);
+      }
     }
+
     return groups;
   }
   // VAULT-CODE-SAFEGUARD-END (grouping part)
@@ -1492,57 +1526,107 @@
                     </div>
                   {/if}
 
-                  <!-- Render the 4 subs as visible "directories" in the finder.
-                       Reports are grouped under their sub so the structure under RAA-Vault is visible. -->
+                  <!-- Accordion for job-folder awareness (Phase 2 first pass).
+                       ~RAA-CONTROL-Manifest.log is the root/anchor for each dated job folder (prominent first item).
+                       Subs > job folders > manifest + reports.
+                       Selection only on reports or manifest (no whole job folder selection).
+                       Client-side grouping from flat list. -->
                   {#each ['Certify', 'Archive', 'Analyze', 'Audit'] as op}
-                    {@const files = groups[op] || []}
-                    <div class="vault-sub">
-                      <div class="vault-sub-header">
-                        📁 {op} <span style="font-weight: normal; color: #888;">({files.length})</span>
-                      </div>
-                      {#if files.length === 0}
+                    {@const subGroups = groups[op] || {}}
+                    {@const jobKeys = Object.keys(subGroups)}
+                    <details class="vault-sub-accordion" open>
+                      <summary class="vault-sub-header">
+                        📁 {op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
+                      </summary>
+                      {#if jobKeys.length === 0}
                         <div class="vault-sub-empty">(no reports yet)</div>
                       {:else}
-                        {#each files as file}
-                          <div
-                            class="vault-row"
-                            class:selected={selectedVaultPath === file.path}
-                            onclick={() => selectVaultFile(file.path)}
-                            onkeydown={(e) => {
-                              if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                selectVaultFile(file.path);
-                              }
-                            }}
-                            role="button"
-                            tabindex="0"
-                            style="border-top: 1px solid #eee;"
-                          >
-                            <!-- Top line: icon + filename -->
-                            <div class="flex items-center gap-4" style="padding-right: 8px;">
-                              <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
-                                {file.has_violation ? "🚨" : "🛡️"}
-                              </span>
-                              <span class="flex-1 text-left text-11 monospace text-ellipsis vault-item-name">
-                                {file.name}
-                              </span>
-                            </div>
+                        {#each jobKeys as jobFolder}
+                          {@const entry = subGroups[jobFolder]}
+                          {@const totalInJob = (entry.manifest ? 1 : 0) + entry.reports.length}
+                          <details class="vault-job-accordion" open>
+                            <summary class="vault-job-header">
+                              📂 {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
+                            </summary>
 
-                            <!-- Bottom line: date + trash -->
-                            <div class="vault-item-date">
-                              <span>{file.modified}</span>
-                              <button
-                                class="vault-delete-btn"
-                                onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
-                                title="Delete this report"
+                            <!-- ~RAA-CONTROL-Manifest.log as the prominent root/anchor for this job folder -->
+                            {#if entry.manifest}
+                              <div
+                                class="vault-row vault-manifest-row"
+                                class:selected={selectedVaultPath === entry.manifest.path}
+                                onclick={() => selectVaultFile(entry.manifest.path)}
+                                onkeydown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    selectVaultFile(entry.manifest.path);
+                                  }
+                                }}
+                                role="button"
+                                tabindex="0"
+                                style="border-top: 1px solid #eee; font-weight: 600;"
                               >
-                                🗑
-                              </button>
-                            </div>
-                          </div>
+                                <div class="flex items-center gap-4" style="padding-right: 8px;">
+                                  <span>📋</span>
+                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {entry.manifest.name}
+                                  </span>
+                                </div>
+
+                                <div class="vault-item-date">
+                                  <span>{entry.manifest.modified}</span>
+                                  <button
+                                    class="vault-delete-btn"
+                                    onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(entry.manifest); }}
+                                    title="Delete this manifest"
+                                  >
+                                    🗑
+                                  </button>
+                                </div>
+                              </div>
+                            {/if}
+
+                            {#each entry.reports as file}
+                              <div
+                                class="vault-row"
+                                class:selected={selectedVaultPath === file.path}
+                                onclick={() => selectVaultFile(file.path)}
+                                onkeydown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    selectVaultFile(file.path);
+                                  }
+                                }}
+                                role="button"
+                                tabindex="0"
+                                style="border-top: 1px solid #eee;"
+                              >
+                                <!-- Top line: icon + filename -->
+                                <div class="flex items-center gap-4" style="padding-right: 8px;">
+                                  <span style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                                    {file.has_violation ? "🚨" : "🛡️"}
+                                  </span>
+                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {file.name}
+                                  </span>
+                                </div>
+
+                                <!-- Bottom line: date + trash -->
+                                <div class="vault-item-date">
+                                  <span>{file.modified}</span>
+                                  <button
+                                    class="vault-delete-btn"
+                                    onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
+                                    title="Delete this report"
+                                  >
+                                    🗑
+                                  </button>
+                                </div>
+                              </div>
+                            {/each}
+                          </details>
                         {/each}
                       {/if}
-                    </div>
+                    </details>
                   {/each}
 
 
