@@ -753,7 +753,7 @@
   display: flex;
   align-items: center;
   font-size: 11px;
-  color: #ddd;  /* match filename color (.vault-item-name) for full uniformity across the file lines */
+  color: #666;  /* grayout for the date meta line (visual hierarchy); size (11px) + boldness (inherits row weight) kept uniform with filenames */
   margin-top: 1px;
   padding-left: 0;
   line-height: 1;
