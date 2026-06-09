@@ -1,6 +1,10 @@
-# RAA-NEWPATH-FORWARD.txt
+# VAULT_ARCHITECTURE.md
+
 # Comprehensive Reference — Granular Per-File Forensic Vault Architecture
-# Created for fallback / clarity if Grok or future sessions lose context
+
+This is the detailed technical design document describing the current architecture for per-file `.raa` reports, dated job folders, and the `~RAA-CONTROL-Manifest.log`.
+
+It was previously named RAA-NEWPATH-FORWARD.txt during the initial design phase.
 
 ================================================================================
 ## 1. CORE VISION & WHY WE ARE DOING THIS
@@ -75,67 +79,33 @@ This is a personal hobby / re-learning / "masterpiece" project. Coding cost and 
    - Future stages may move or enhance skipped display into the right pane.
 
 ================================================================================
-## 3. STAGED IMPLEMENTATION ORDER (START HERE)
+## 3. IMPLEMENTATION STATUS (SUMMARY)
 ================================================================================
 
-Stage 1: ~RAA-CONTROL-Manifest (Current / First Stage to Implement)
-- Trigger: User clicks "Start Certification" (handleCertifyFolder) or selects a ZIP (handleBrowseArchive).
-- Immediate actions:
-  a. Determine job name + timestamp.
-  b. Create the dated job folder inside the resolved vault root.
-  c. Walk the target (folder tree or ZIP central directory) using the same filters that will be used for actual auditing.
-  d. Write the static file `~RAA-CONTROL-Manifest.log` as the very first file inside the job folder.
-- The manifest should clearly show full relative hierarchy.
-- This file is the master inventory / audit control sheet.
-- Emit an event so the right pane (once wired) can show "Created ~RAA-CONTROL-Manifest...".
+**Note:** This document has been condensed. Detailed historical narratives for completed early stages of the "New Path Forward" have been summarized in ROADMAP.md (see the "Granular Vault Architecture" section there). The original full staging details are preserved in git history.
 
-Stage 2: Right Pane Live Comfort Feed
-- Turn the current right "Coming Soon" pane into a real-time list of .raa files as they are successfully written.
-- Keep left pane as "📡 Audited" (files currently being processed).
-- Keep bottom bar for skipped (preserving all prior logic).
-- This is purely for user comfort during long jobs.
+Current focus (see also ROADMAP.md and Open Questions below):
+- Stabilizing per-file .raa emission + job folder creation (Certify and Archive).
+- Finalizing the `~RAA-CONTROL-Manifest.log` (inventory + DNA Registry) as the reliable single source of truth.
+- Right pane as live comfort feed.
+- (Parked) Full job-folder-aware vault browser (Stage 5 in historical numbering).
 
-Stage 3: Per-File .raa Emission + Job Folder Writing (Core Granular Work)
-- Refactor generate_manifest and scan_compressed_archive so that instead of (or in addition to) building one big string, they write individual rich .raa files for each audited file.
-- Use the job folder created in Stage 1 as the destination.
-- Apply hierarchy mirroring where possible.
-- Each written file should be a complete, standalone, high-quality forensic vault entry for exactly one file.
-- Update RAAReport return types and success/error handling as needed for partial success across many files.
-
-Stage 4: Archive Path Full Alignment
-- Make sure the ZIP scanning path produces per-file .raa artifacts inside the job folder.
-- Decide on job folder naming for ZIP sources (e.g. based on the zip filename).
-- Keep the in-memory safety model.
-
-Stage 5: Vault Browser & DNA Updates for Job Folders
-- Make list_vault_files, the vault UI, DNA extraction, and verification aware of job folders.
-- The control manifest should be easily discoverable and perhaps specially rendered when a job is selected.
-
-**IMPORTANT NOTE (Tabled Work):**
-The current vault browser (both Rust `list_vault_files` and the Svelte UI) does a flat directory listing of the vault root.
-It does **not** yet understand or display the new dated job folders.
-Until the ~RAA-CONTROL-Manifest.log and the writing of .raa reports inside job folders are in a stable state that the user is happy with,
-we are deliberately **not** rewriting the vault listing logic.
-See the TODO comment at the top of `list_vault_files` in lib.rs for details.
-This is intentionally deferred.
-
-Later Stages (explicitly future):
-- Right pane evolution (clickable / live vault / skipped with reasons)
-- New Reports section + possible PDF generation
-- Any vault visualization improvements, job-level metadata, etc.
+Full constraints, locked decisions, and remaining open questions are in the sections below. Success criteria for active work are referenced in ROADMAP.md.
 
 ================================================================================
-## 4. TECHNICAL MAPPING (WHERE THINGS LIVE)
+## 4. TECHNICAL MAPPING (HISTORICAL / WHERE THINGS LIVE)
 ================================================================================
+
+**Note:** This section is retained for reference from the original planning. Many "will need to" items have since been implemented or are in progress (see ROADMAP.md for current status). The core mapping of responsibilities remains useful.
 
 Rust side (src-tauri/src/lib.rs):
 - generate_manifest (the big bucketing + LLM loop for Certify)
 - scan_compressed_archive (the per-file in-memory ZIP walker)
-- log_to_raa (the current writer — will need to become job-folder aware or be replaced/supplemented)
+- log_to_raa (the writer — evolved to support job folders)
 - resolve_vault_root + related vault helpers
 - list_vault_files, read_single_vault_file, delete_vault_file
-- FileJob struct, bucket logic, FileAnalysis JSON struct (recent structured output work)
-- RAAReport return type (recently hardened for is_error)
+- FileJob struct, bucket logic, FileAnalysis JSON struct
+- RAAReport return type (hardened for is_error)
 
 **Junk / Exclusion Filter (shared constant `JUNK_NAMES` in lib.rs):**
 This list controls which files and directories are completely ignored during auditing and control manifest generation.
@@ -147,23 +117,23 @@ Current contents (as of latest update):
 - __MACOSX
 - .DS_Store          ← Added 2026-05-30 (macOS Finder metadata)
 
-This list should be kept in sync between `generate_manifest` and `build_control_manifest`.
+This list should be kept in sync between `generate_manifest` and control manifest building.
 
 Svelte side (src/routes/+page.svelte):
 - handleCertifyFolder and handleBrowseArchive
 - resetResults (clears activeFiles + skippedFiles)
 - scan-event listener (Active vs Skipped)
-- activeFiles / skippedFiles state and the dual-pane + (future) right-pane rendering
-- extractRecordedHashes + DNA verification logic (will need to handle per-file vault entries and job folders)
+- activeFiles / skippedFiles state and the dual-pane + right-pane rendering
+- extractRecordedHashes + DNA verification logic (now handles per-file entries)
 - currentReport, certMsg, timers, etc.
 
 CSS (src/app.css):
 - .dual-pane-monitor and .pane rules
-- New styles will be needed for the right-pane comfort feed and eventually job-folder-aware vault list
+- Styles for right-pane comfort feed and vault list
 
 Other important files:
-- grok.review.txt (permanent mission + push discipline + capture points)
-- ROADMAP.md (this new path is now documented there)
+- PROJECT_MEMORY.md (permanent mission + push discipline + capture points)
+- ROADMAP.md (high-level plan and status)
 
 ================================================================================
 ## 5. NAMING & CONVENTIONS
@@ -223,23 +193,48 @@ Per-file reports inside the job folder:
 ================================================================================
 
 - ROADMAP.md (the public staged plan)
-- grok.review.txt (permanent mission, push rules, capture points)
+- PROJECT_MEMORY.md (permanent mission, push rules, capture points)
 - src-tauri/src/lib.rs (core engine)
 - src/routes/+page.svelte (UI and event handling)
 - src/app.css (layout rules for panes)
 
 ================================================================================
-## 10. SUCCESS CRITERIA FOR STAGE 1 (~RAA-CONTROL-Manifest)
+## 10. SUCCESS CRITERIA FOR STAGE 1 (~RAA-CONTROL-Manifest) — HISTORICAL
 ================================================================================
+
+**Note:** This section is retained for historical reference. Stage 1 success criteria have largely been met (initial implementation landed; see ROADMAP.md for current status of related work). Full original text preserved below for completeness.
 
 When Stage 1 is complete, the following should be true:
 - Clicking Start on either Certify or Archive immediately creates a dated job folder in the vault.
 - The static file `~RAA-CONTROL-Manifest.log` is the very first thing written into that folder.
 - The manifest accurately lists the full hierarchy of every file that will be audited (using the same filtering logic the rest of the job will use).
 - The right pane (once Stage 2 is done) can announce the creation of this manifest.
+
+================================================================================
+## 11. FUTURE / DEFERRED WORK (Outside Core "New Path Forward" Planning)
+================================================================================
+
+### Uniform Integrity Checks Revamp (Deferred)
+- **Goal**: Later revamp ALL Integrity checks (the 7-item self-check dashboard) so they follow a single, uniform structure and execution model.
+- **Current State (as of now)**: Mix of actual runtime tests (parallel_hashing via rayon, bucket_traversal via walkdir, vault_path existence) and hardcoded `true` assertions (ai_reasoning, terminal_input_lock, zip_safety, disk_first_verification). The "📁 Hidden Vault" / vault_path item is currently just a directory existence check.
+- **Desired Outcome**:
+  - Consistent pattern for every check (e.g. same way of computing, same way of reporting status, same "guarded by design" semantics).
+  - Clearer distinction between "real runtime verification" vs. "architectural guarantee".
+  - Easier to extend, test, and document.
+  - Potentially rename/restructure "Hidden Vault" into "Forensic Vault" to better reflect the new granular architecture (static subs, job folders, etc.).
+- **Why Deferred**: Not blocking the current New Path Forward stages (manifests, per-file reports, job folders). This is a polish + architectural consistency task for the Integrity Guard area.
+
+**Additional Note (Tabled for Discussion):** The Forensic Vault safeguard check (subs existence + exercising the creation logic) lives inside the dev-only Integrity Guard. It is intentionally invisible in release builds. See the expanded dev-only enforcement notes and tabled suggestions in ROADMAP.md and the code comments in +page.svelte.
+- **Related**: See also the "Known Polish Items" section in ROADMAP.md.
 - No existing skipped logic, DNA logic, or permanent anchors have been broken.
 - Joe can open the job folder in Finder and immediately see the control sheet at the top.
 
 ================================================================================
-This document exists so that the full context, rationale, and constraints of the New Path Forward are never lost, even across long gaps or if the main AI context is reset.
+This document (condensed from its original "New Path Forward" form) exists so that the full vision, locked architectural decisions, constraints, and rationale of the Granular Vault Architecture are preserved and easily referenced, even across long gaps or if the main AI context is reset.
+
+Historical implementation details for early stages have been summarized in ROADMAP.md to reduce redundancy on finished work. See git history for the original full text if needed.
+
+================================================================================
+## Cross-Reference: Tabled Suggestions
+See the new "📋 Tabled Suggestions for Future Discussion (Credible Ideas — Do Not Implement)" section at the end of ROADMAP.md. It captures several vault-related, integrity-safeguard, versioning, and dev-only enforcement ideas that surfaced during the granular architecture work. No content was removed or altered in this file; the tabled items are for future discussion only and must not be acted upon until reviewed and approved in a dedicated session.
 ================================================================================

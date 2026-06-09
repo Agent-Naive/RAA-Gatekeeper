@@ -1,9 +1,10 @@
 # 🛡️ RAA-Gatekeeper
 **The Read-Only Forensic Auditor for the AI-Agent Era.**
 
-[![Project Status: Active](https://shields.io)](https://github.com)
-[![Architecture: Tauri v2](https://shields.io)](https://tauri.app)
-[![Backend: Rust](https://shields.io)](https://rust-lang.org)
+[![Project Status: Active](https://shields.io/badge/status-active-green)](https://github.com/Agent-Naive/RAA-Gatekeeper)
+[![Version: 0.4.0](https://shields.io/badge/version-0.4.0-blue)](https://github.com/Agent-Naive/RAA-Gatekeeper)
+[![Architecture: Tauri v2](https://shields.io/badge/architecture-Tauri_v2-blue)](https://tauri.app)
+[![Backend: Rust](https://shields.io/badge/backend-Rust-orange)](https://rust-lang.org)
 
 ## 📖 Overview
 **RAA-Gatekeeper** is a specialized security middleware designed to solve the "Trust Gap" between local codebases and AI Agents. Built on the **Restrictive Access Ability (RAA)** protocol, it serves as a **Read-Only Auditor**, ensuring that no code, terminal command, or archive is passed to an LLM without a forensic safety certification.
@@ -34,7 +35,7 @@ Before building the project, ensure the environment meets the following requirem
 ### **Installation**
 1. Clone the repository:
    ```bash
-   git clone https://github.com.git
+   git clone https://github.com/Agent-Naive/RAA-Gatekeeper.git
    cd RAA-Gatekeeper
    ```
 2. Install frontend dependencies:
@@ -61,7 +62,8 @@ npm run tauri build
 *   **Frontend:** Svelte 5 / SvelteKit (UI Logic & State Management).
 *   **Backend:** Rust / Tauri v2 (Forensic Engine & OS Integration).
 *   **Parallelism:** `Rayon` for multi-core SHA-256 file hashing.
-*   **Intelligence:** Integrated with xAI Grok-1.5 / Google Gemini for heuristic auditing.
+*   **Intelligence:** Integrated with xAI Grok for heuristic auditing (fully dynamic Base URL + Model Name).
+*   **Architecture:** Granular per-file `.raa` reports + dated job folders (see [VAULT_ARCHITECTURE.md](VAULT_ARCHITECTURE.md) for the full design).
 
 ---
 
@@ -78,6 +80,12 @@ npm run tauri build
 *   `raa-test/` - Isolated directory for generated forensic vault entries.
 
 ---
+
+## 📚 Documentation & References
+
+- [ROADMAP.md](ROADMAP.md) — High-level status, phases, and current plan
+- [VAULT_ARCHITECTURE.md](VAULT_ARCHITECTURE.md) — Detailed technical design for the granular per-file reports + job folder architecture
+- [PROJECT_MEMORY.md](PROJECT_MEMORY.md) — Persistent project knowledge, rules, and session history
 
 ## ⚖️ License
 Proprietary / RAA-Certified.

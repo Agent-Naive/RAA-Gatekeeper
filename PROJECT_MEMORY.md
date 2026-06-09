@@ -1,4 +1,10 @@
+# PROJECT_MEMORY.md
+
 # RAA-Gatekeeper — Project Knowledge Base & Session Reviews
+
+This document serves as the persistent project memory, including permanent rules, mission, push discipline, and historical session reviews. It is the primary reference to help future contributors (and AI sessions) maintain context across long gaps.
+
+It was previously named grok.review.txt.
 
 ================================================================================
 ### PERMANENT KNOWLEDGE — DO NOT EDIT THIS SECTION ###
@@ -92,6 +98,12 @@ These rules exist specifically because this project uses Grok Build and GitHub p
 ## 2026-05-30 — End of Day Review
 
 **Session Focus:** Heavy UI/UX refinement on Vault view and Integrity Guard, CSS architecture improvements, delete report feature, and critical bug documentation.
+
+---
+
+**Note on Tabled Suggestions (added per user request):** Credible ideas for the vault finder (subs + job folders), Forensic Vault safeguard strengthening inside Integrity Guard, compile-time dev-only stripping, version sync across the 5 files, full "RAA-Gatekeeper" name hygiene, release-readiness checklist, and settings reorg have been captured in a dedicated "📋 Tabled Suggestions for Future Discussion" section in ROADMAP.md (with cross-refs from VAULT_ARCHITECTURE.md and this file). 
+
+These are explicitly tabled for a later dedicated discussion session. No implementation, no code comments treating them as active work, and no purging of existing content in PROJECT_MEMORY.md or VAULT_ARCHITECTURE.md has occurred. Review that ROADMAP section when planning future turns. (This note added without altering any prior session content.)
 
 ### Major Accomplishments
 - Restored and significantly improved the **Integrity Guard** page (it had lost most of its visual structure during earlier CSS cleanup). Now has a clean, card-based grid layout.
@@ -343,7 +355,7 @@ RAA-Vault/
 - `src/routes/+page.svelte` — Header restructured into 3 columns, both toasts moved into center
 - `src/app.css` — New header grid, toast positioning + min-width, various small adjustments
 - `ROADMAP.md` — Updated with new architecture progress and the mandatory future settings reorganization note
-- `RAA-NEWPATH-FORWARD.txt` — Contains detailed notes on the current architecture
+- `VAULT_ARCHITECTURE.md` — Contains detailed notes on the current architecture
 
 ### Open Questions / Next Priorities
 
@@ -375,13 +387,13 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - Established project context using the proper Grok invocation: `~/.grok/bin/grok --cwd /Users/agent-naive/dev/RAA-Gatekeeper inspect`. This correctly reported CWD + Git root, no project-local instructions/config yet, and user-level Grok config.
 - Performed deep reads of the project's own long-term memory artifacts:
   - ROADMAP.md (full) — captured exact current status and staged plan.
-  - This file (grok.review.txt) — re-read permanent knowledge, git rules, and 2026-05-30 session history for continuity.
+  - This file (PROJECT_MEMORY.md) — re-read permanent knowledge, git rules, and 2026-05-30 session history for continuity.
   - RAA-Vision.md (full) — high-level philosophy.
-  - RAA-NEWPATH-FORWARD.txt (full) — the comprehensive internal reference document for the granular architecture (created as a fallback to prevent context loss).
+  - VAULT_ARCHITECTURE.md (full) — the comprehensive internal reference document for the granular architecture (created as a fallback to prevent context loss).
   - Attempted direct read of the foundational `RAA Gatekeeper.pdf` on Desktop (the "Birth of RAA" origin doc from ~April 5, 2026). Access blocked by macOS ("Operation not permitted"). Relied on RAA-Vision.md + references in other docs as proxy.
 - Synthesized and internalized "where we left off" for the entire project (detailed below).
 - Confirmed no AGENTS.md or local `.grok/` directory exists in the repo yet (opportunity for future project rules).
-- Noted existing artifacts in the tree: grok.review.txt, RAA-NEWPATH-FORWARD.txt, ROADMAP.md, RAA-Vision.md, RAA-NEWPATH-FORWARD.txt, previous review notes (grok.review.txt), test directories, and build artifacts.
+- Noted existing artifacts in the tree: PROJECT_MEMORY.md, VAULT_ARCHITECTURE.md, ROADMAP.md, RAA-Vision.md, VAULT_ARCHITECTURE.md, previous review notes (PROJECT_MEMORY.md), test directories, and build artifacts.
 
 ### Current Project Status Snapshot (Synthesized for Future Sessions)
 **From ROADMAP.md (as of this session):**
@@ -390,7 +402,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - Phases 1+2 (Core Engine & Performance) and core Phase 3+4 (Forensic UI & Silent Monitoring) are marked COMPLETE (terminal auditing with Bible cache, deep file + archive scanning, parallel Rayon hashing, Silent Watcher with DNA alerts, Integrity Guard, user-selectable vault, real-time timers, etc.).
 - "Currently In Progress / Next" items remain open: Rich Vault Browser, DNA Verification UI, Export Reports, Violation History Dashboard ("Wall of Shame"), Token Economy Counter.
 - Significant polish note: Settings page reorganization into button-driven sections is called out as a **Mandatory UI Improvement (Deferred)** due to excessive scrolling pain on macOS.
-- Dominant content is the detailed **New Path Forward** section with 6 explicit stages (see below). Vault browser work is *explicitly tabled* until `~RAA-CONTROL-Manifest` + per-file report writing inside job folders are stable. See TODO comments in `src-tauri/src/lib.rs` (especially `list_vault_files`) and the full details in RAA-NEWPATH-FORWARD.txt.
+- Dominant content is the detailed **New Path Forward** section with 6 explicit stages (see below). Vault browser work is *explicitly tabled* until `~RAA-CONTROL-Manifest` + per-file report writing inside job folders are stable. See TODO comments in `src-tauri/src/lib.rs` (especially `list_vault_files`) and the full details in VAULT_ARCHITECTURE.md.
 
 **New Path Forward (the active architecture we are implementing):**
 - Shift from monolithic "one big .raa per job" (with internal blocks) to **ONE FILE = ONE REPORT**.
@@ -401,7 +413,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - Hierarchy mirroring inside job folders is strongly preferred for duplicate-name safety and familiar after-action review.
 - Archive (ZIP) scanning must continue to work (in-memory, no full extraction) and emit per-file .raa inside the job folder.
 - Enduring principle (from ALLSAFE era, must be enforced in new model): *A Certify job must never be allowed to appear successful if any audited file contains a violation.*
-- Stages (detailed in ROADMAP and fully expanded in RAA-NEWPATH-FORWARD.txt):
+- Stages (detailed in ROADMAP and fully expanded in VAULT_ARCHITECTURE.md):
   1. ~RAA-CONTROL-Manifest (Current Focus / First Stage to stabilize).
   2. Real-Time Right Pane Comfort Feed.
   3. Per-File .raa Writing + Job Folder Hierarchy Mirroring (core of the granular model; partial implementation already landed in 2026-05-30 session).
@@ -426,7 +438,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - Target user "Joe": regular end-user (not dev) who downloads a zip/folder/AI-built project and needs protection before running it.
 - "Trust, then Certify" as the cultural standard. Every interaction recorded in tamper-proof `.raa` vault entries. The PDF (inaccessible here) is the April 2026 origin document for these ideas.
 
-**From RAA-NEWPATH-FORWARD.txt (critical long-term reference — always re-read when working on the new architecture):**
+**From VAULT_ARCHITECTURE.md (critical long-term reference — always re-read when working on the new architecture):**
 - Full rationale, locked decisions, technical mapping (which functions live where: `generate_manifest`, `scan_compressed_archive`, `log_to_raa`, `list_vault_files`, `resolve_vault_root`, Svelte handlers, etc.), naming conventions, Joe experience targets, constraints (preserve skipped logic as temporary holding pattern for now, zero-mutation, etc.), success criteria for Stage 1, and open/tabled questions.
 - Explicitly created so full context survives long gaps or context resets.
 - Junk filter list (`JUNK_NAMES`) must stay in sync between manifest generation and control manifest building (includes node_modules, .git, target, dist, __MACOSX, .DS_Store — last added 2026-05-30).
@@ -441,7 +453,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - `grok inspect --cwd ...` (or via the full invocation) is the authoritative way to confirm context.
 - No project-specific AGENTS.md, .grok/config, or local rules loaded yet.
 - Memory is globally enabled (from user config); workspace-specific memory under `~/.grok/memory/` will use the git slug (`Agent-Naive/RAA-Gatekeeper`) once used in this CWD.
-- PDF on Desktop remains inaccessible in current tool environment — use RAA-Vision.md + RAA-NEWPATH-FORWARD.txt as authoritative proxies.
+- PDF on Desktop remains inaccessible in current tool environment — use RAA-Vision.md + VAULT_ARCHITECTURE.md as authoritative proxies.
 
 ### Open Questions / Next Priorities (Carried Forward + New from This Session)
 1. Stabilize **Stage 1 (~RAA-CONTROL-Manifest)**: Job folder creation on Start + writing the static `~RAA-CONTROL-Manifest.log` (full inventory + hierarchy using the same filters as auditing) as the very first artifact. Emit events for right-pane comfort feed.
@@ -450,20 +462,29 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 4. Address mandatory Settings page UX (reorganize to sections/tabs to eliminate long scrolling).
 5. DNA verification flow redesign now that reports live per-file inside job folders (manifest as single source of truth?).
 6. Watcher noise filtering improvements (editor temp files, etc.).
-7. Continue following the detailed constraints and success criteria in RAA-NEWPATH-FORWARD.txt.
+7. Continue following the detailed constraints and success criteria in VAULT_ARCHITECTURE.md.
 8. Consider adding project-level AGENTS.md or .grok rules now that we have strong focus here.
+9. **Future Revamp (Deferred)**: Revamp ALL Integrity checks so they are uniform in their structure and execution. Currently a heterogeneous mix of real runtime tests and hardcoded `true` assertions (see ROADMAP.md Known Polish Items and VAULT_ARCHITECTURE.md section 11 for details). Goal: single consistent pattern across the entire Integrity Guard dashboard.
+
+**Tabled Suggestion (Dev-only Integrity Guard):** The entire Integrity area (button + panel, including the Forensic Vault code safeguard) must remain strictly dev-only. Current implementation uses `{#if isDev}`. Credible future improvements to table for discussion:
+- Use Vite define / tree-shaking so the code is completely absent from production bundles.
+- Switch from a hidden nav tab to a dev-only global keyboard shortcut (e.g. Ctrl+Shift+I) that opens an overlay.
+- Add a CI/build test that verifies no "Integrity" or "dev-tab" artifacts exist in production builds.
 
 ### Recommendations for Future Grok Inference Sessions
 - **Always begin by reading the PERMANENT KNOWLEDGE section (top of this file) + the most recent session review(s).**
-- Re-read ROADMAP.md + the entire RAA-NEWPATH-FORWARD.txt before making changes to auditing flows, manifest writing, or vault code.
+- Re-read ROADMAP.md + the entire VAULT_ARCHITECTURE.md before making changes to auditing flows, manifest writing, or vault code.
 - Cross-reference the staged plan and "locked decisions" when implementing.
 - When testing, use the existing test directories (e.g. test-directory02) and re-arm the watcher after any renames/moves.
 - Maintain zero warnings, zero errors, and the read-only + advisory-only invariants.
 - For git: commit locally often; push only at natural checkpoints or explicit user request.
-- This document + RAA-NEWPATH-FORWARD.txt + ROADMAP.md are the primary mechanisms to survive context resets.
+- This document + VAULT_ARCHITECTURE.md + ROADMAP.md are the primary mechanisms to survive context resets.
 
 **Overall Feeling:**  
 Excellent re-acquisition and focus switch. The project now has strong, self-contained long-term memory in its own files (especially this review log + the detailed NEWPATH-FORWARD spec). We have a clear picture of exactly where implementation left off and what the next concrete steps are in the New Path Forward. Ready to resume active development (most logically by tackling Stage 1 stabilization) with full context preserved for any future Grok session.
+
+**Note added per user request (2026 session):**  
+Future task logged: Later revamp **ALL Integrity checks** for uniformity in structure and execution (see added item #9 above, ROADMAP.md "Known Polish Items", and new section 11 in VAULT_ARCHITECTURE.md). This is explicitly decoupled from the .raa data/reports themselves and focused on the Integrity Guard dashboard's internal consistency.
 
 ---
 **End of 2026-06-06 Review**

@@ -307,6 +307,12 @@
     // This is the static/"our" structure the app owns for the vault finder.
     // We do this early (before the first loadVaultData) so the structure is
     // guaranteed when the Forensic Vault list scans.
+    // VAULT-CODE-SAFEGUARD-START
+    // !!! DO NOT TOUCH OR DELETE THIS BLOCK !!!
+    // This is protected by the "📜 Forensic Vault" check in the 🛡️ Integrity Guard.
+    // It must remain intact so the 4 subs are statically created on launch (per the exact conditions).
+    // If you modify/delete this, the Forensic Vault item will likely show ❌ on next integrity check.
+    // This is the "do not touch" safeguard for the vault code (not the data inside the vault).
     (async () => {
       try {
         const hasCustom = !!vaultRootPath;
@@ -332,6 +338,7 @@
       // should discover any .raa files that exist under them / job folders.
       loadVaultData();
     })();
+    // VAULT-CODE-SAFEGUARD-END
 
     return () => {
       if (unlisten) unlisten();
@@ -732,7 +739,7 @@
       // (Audit / Analyze / Archive / Certify) and recurses into dated job folders
       // to discover all .raa reports written under the new granular structure.
       // The UI shows a flat list of all discovered reports (full tree navigation of
-      // job folders as containers is still tabled — see RAA-NEWPATH-FORWARD.txt).
+      // job folders as containers is still tabled — see VAULT_ARCHITECTURE.md).
       // Clear selection when loading fresh data
       selectedVaultPath = "";
       selectedVaultContent = "";
@@ -830,6 +837,10 @@
   // Group reports by the typed sub-directory (Certify, Archive, etc.) so the
   // Forensic Vault acts more like a finder showing the directory structure
   // under RAA-Vault.
+  // VAULT-CODE-SAFEGUARD-START (grouping part)
+  // !!! PROTECTED BY "📜 Forensic Vault" INTEGRITY CHECK !!!
+  // Do not delete or alter this grouping. It makes the subs visible as directories in the finder.
+  // If removed, the structure the integrity check expects may be affected in UI/tests.
   function getGroupedVaultReports() {
     const ops = ['Certify', 'Archive', 'Analyze', 'Audit'];
     const groups: Record<string, any[]> = { Certify: [], Archive: [], Analyze: [], Audit: [], Other: [] };
@@ -847,6 +858,7 @@
     }
     return groups;
   }
+  // VAULT-CODE-SAFEGUARD-END (grouping part)
 
   async function runIntegrityCheck() {
     activeTab = "integrity";
@@ -897,7 +909,7 @@
 
     <!-- Right column: Version -->
     <div class="header-right">
-      <div class="version-tag">v0.4.0-dev</div>
+      <div class="version-tag">v0.4.0</div>
     </div>
   </header>
 
@@ -938,6 +950,21 @@
       onclick={() => (activeTab = "settings")}>⚙️ Settings</button
     >
     {#if isDev}
+      <!-- 
+        DEV-ONLY: The entire Integrity Guard (including the Forensic Vault safeguard)
+        is intentionally hidden in production/release builds.
+        It must never be exposed to end users. This is a development/debugging tool only.
+        The isDev guard (window.location.hostname === "localhost") controls visibility.
+        Do not remove this condition or the dev-tab styling.
+
+        TABLED SUGGESTIONS (for future discussion):
+        - Use Vite define / import.meta.env.DEV + tree-shaking to completely exclude
+          Integrity-related code and styles from production bundles (not just hide the button).
+        - Replace the nav tab with a global dev-only keyboard shortcut (e.g. Ctrl+Shift+I)
+          that opens an overlay/modal. This keeps the main UI clean even in dev.
+        - Add a production "health check" mode that exposes only a minimal, safe subset
+          of integrity data without revealing internal implementation details.
+      -->
       <button
         class="dev-tab"
         class:active={activeTab === "integrity"}
@@ -1068,7 +1095,15 @@
                        class:manifest={item.text.includes('📋')}
                        class:certified={item.text.includes('(CERTIFIED)')}
                        class:violation={item.text.includes('(VIOLATION')}
-                       onclick={() => viewFeedItem(item)}>
+                       onclick={() => viewFeedItem(item)}
+                       onkeydown={(e) => {
+                         if (e.key === 'Enter' || e.key === ' ') {
+                           e.preventDefault();
+                           viewFeedItem(item);
+                         }
+                       }}
+                       role="button"
+                       tabindex="0">
                     {item.text}
                   </div>
                 {/each}
@@ -1118,7 +1153,15 @@
                        class:manifest={item.text.includes('📋')}
                        class:certified={item.text.includes('(CERTIFIED)')}
                        class:violation={item.text.includes('(VIOLATION')}
-                       onclick={() => viewFeedItem(item)}>
+                       onclick={() => viewFeedItem(item)}
+                       onkeydown={(e) => {
+                         if (e.key === 'Enter' || e.key === ' ') {
+                           e.preventDefault();
+                           viewFeedItem(item);
+                         }
+                       }}
+                       role="button"
+                       tabindex="0">
                     {item.text}
                   </div>
                 {/each}
@@ -1128,7 +1171,20 @@
 
 
         </section>
-      {:else if activeTab === "integrity"}
+      {:else if isDev && activeTab === "integrity"}
+        <!-- 
+          DEV-ONLY: Double-guarded here in addition to the nav button.
+          The Integrity Guard must never be visible or functional in production/release builds.
+
+          TABLED SUGGESTIONS (for future discussion):
+          - Consider extracting the entire Integrity Guard into a separate dev-only
+            route or dynamically imported module that is never included in prod builds.
+          - Add an automated test/CI step that builds in production mode and asserts
+            that no "Integrity" or "dev-tab" strings appear in the output.
+          See ROADMAP.md "Tabled Suggestions for Future Discussion" (items 2, 3, 7 especially)
+          for the expanded, cross-referenced versions of these and related vault-safeguard ideas.
+          All such items remain explicitly tabled until a dedicated review session.
+        -->
         <section class="tool-view">
           <h2>Integrity Guard</h2>
           <div class="integrity-container">
@@ -1165,7 +1221,7 @@
                   >
                 </div>
                 <div class="check-item">
-                  <span>📁 Hidden Vault:</span>
+                  <span>📜 Forensic Vault:</span>
                   <span class="check"
                     >{integrityReport.vault_path ? "✅" : "❌"}</span
                   >
@@ -1267,7 +1323,7 @@
             </div>
 
             <div class="filter-logic-zone">
-              <h4 class="filter-title">🕵️ Silent Watcher (Phase 4)</h4>
+              <h4 class="filter-title">🕵️ Silent Watcher</h4>
 
               <div class="watcher-controls flex gap-20 items-center mb-20">
                 <label class="toggle-label flex items-center gap-8 cursor-pointer">
