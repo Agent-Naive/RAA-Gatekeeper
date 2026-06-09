@@ -157,6 +157,19 @@ fn resolve_vault_root(vault_root_path: &str) -> PathBuf {
     PathBuf::from(trimmed).join("RAA-Vault")
 }
 
+/// Resolves the root directory for a specific operation type under the main RAA-Vault.
+/// Operations: "Audit" (terminal commands), "Analyze" (single files),
+/// "Archive" (zips), "Certify" (folders).
+/// Creates the subdirectory if it does not exist.
+fn resolve_operation_vault(vault_root_path: &str, operation: &str) -> PathBuf {
+    let base = resolve_vault_root(vault_root_path);
+    let op_root = base.join(operation);
+    if !op_root.exists() {
+        let _ = fs::create_dir_all(&op_root);
+    }
+    op_root
+}
+
 // --- RAA LOGGING ENGINE ---
 
 /// Sanitizes a string for safe use in filenames and directory names.
@@ -375,11 +388,152 @@ fn build_tree_lines(root_name: &str, file_paths: &[PathBuf]) -> Vec<String> {
     lines
 }
 
+/// Builds the ~RAA-CONTROL-Manifest.log for Archive (ZIP) operations.
+/// Matches the visual structure of the Certify version:
+/// - Header with Generated, Source (zip path), Job Folder
+/// - DNA Registry (File → Hash)  -- audited get real hashes, skipped get "SKIPPED"
+/// - Directory Structure for audited
+/// - Directory Structure for skipped
+/// The tree root uses the zip filename.
+fn build_archive_control_manifest(
+    zip_file_name: &str,
+    source: &str,
+    job_name: &str,
+    timestamp: &str,
+    audited_rel: &[PathBuf],
+    skipped_rel: &[PathBuf],
+    audited_hashes: &HashMap<PathBuf, String>,
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+
+    // Header - exact match to Certify style
+    lines.push("~RAA-CONTROL-Manifest.log".to_string());
+    lines.push(format!("Generated: {}", timestamp));
+    lines.push(format!("Source: {}", source));
+    lines.push(format!("Job Folder: {}", job_name));
+    lines.push(String::new());
+
+    // DNA Registry
+    lines.push("DNA Registry (File → Hash):".to_string());
+    lines.push(String::new());
+
+    // Audited files (sorted for consistency)
+    let mut audited_sorted: Vec<_> = audited_rel.iter().collect();
+    audited_sorted.sort();
+    for rel in audited_sorted {
+        let hash = audited_hashes
+            .get(rel)
+            .cloned()
+            .unwrap_or_else(|| "PENDING".to_string());
+        lines.push(format!("File: {}", rel.display()));
+        lines.push(format!("Hash: {}", hash));
+        lines.push(String::new());
+    }
+
+    // Skipped files (sorted)
+    let mut skipped_sorted: Vec<_> = skipped_rel.iter().collect();
+    skipped_sorted.sort();
+    for rel in skipped_sorted {
+        lines.push(format!("File: {}", rel.display()));
+        lines.push("Hash: SKIPPED".to_string());
+        lines.push(String::new());
+    }
+
+    lines.push(String::new());
+
+    // Directory Structure audited
+    lines.push(format!(
+        "Directory Structure ({} files to be audited):",
+        audited_rel.len()
+    ));
+    lines.push(String::new());
+    let root_name = sanitize_for_filename(zip_file_name);
+    lines.extend(build_tree_lines(&root_name, audited_rel));
+
+    lines.push(String::new());
+
+    // Directory Structure skipped
+    lines.push(format!(
+        "Directory Structure ({} files to be skipped):",
+        skipped_rel.len()
+    ));
+    lines.push(String::new());
+    lines.extend(build_tree_lines(&root_name, skipped_rel));
+
+    lines.join("\n")
+}
+
+/// Builds the *initial* ~RAA-CONTROL-Manifest.log written as the very first
+/// artifact when a job starts (Stage 1 of New Path Forward).
+///
+/// This version contains only the header + directory structure (inventory +
+/// hierarchy) using the exact same filtering as the rest of the audit.
+/// No DNA hashes yet — those are added when the job completes.
+///
+/// The file is written immediately after the dated job folder is created,
+/// before any content reading or LLM calls. It will be overwritten at the
+/// end of the job by the full version containing the DNA Registry.
+fn build_initial_control_manifest(
+    root: &Path,
+    allowed_extensions: &[String],
+    source_folder_name: &str,
+    job_name: &str,
+    timestamp: &str,
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+
+    // Header (matches the style of the final manifest)
+    lines.push("~RAA-CONTROL-Manifest.log".to_string());
+    lines.push(format!("Generated: {}", timestamp));
+    lines.push(format!("Source: {}", root.display()));
+    lines.push(format!("Job Folder: {}", job_name));
+    lines.push(String::new());
+
+    lines.push("Status: Initial inventory snapshot — DNA Registry (File → Hash) will be finalized at job completion.".to_string());
+    lines.push(String::new());
+
+    // Use the exact same collection logic as the audit path and the final manifest.
+    let (audited_rel_paths, skipped_rel_paths) =
+        collect_audited_and_skipped_paths(root, allowed_extensions);
+
+    lines.push(format!(
+        "Directory Structure ({} files to be audited):",
+        audited_rel_paths.len()
+    ));
+    lines.push(String::new());
+    lines.extend(build_tree_lines(source_folder_name, &audited_rel_paths));
+
+    lines.push(String::new());
+
+    lines.push(format!(
+        "Directory Structure ({} files to be skipped):",
+        skipped_rel_paths.len()
+    ));
+    lines.push(String::new());
+    lines.extend(build_tree_lines(source_folder_name, &skipped_rel_paths));
+
+    lines.join("\n")
+}
+
 fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str, vault_root_path: &str) -> PathBuf {
-    let audit_root = resolve_vault_root(vault_root_path);
-    
-    if !audit_root.exists() {
-        let _ = fs::create_dir_all(&audit_root);
+    // Route to operation-specific sub-root for clean separation
+    // "audit" (terminal commands) -> Audit/
+    // "analyze" (single files) -> Analyze/
+    // Other (legacy) -> main vault root
+    let operation = match scan_type {
+        "audit" => "Audit",
+        "analyze" => "Analyze",
+        _ => "",
+    };
+
+    let base_root = if !operation.is_empty() {
+        resolve_operation_vault(vault_root_path, operation)
+    } else {
+        resolve_vault_root(vault_root_path)
+    };
+
+    if !base_root.exists() {
+        let _ = fs::create_dir_all(&base_root);
     }
 
     let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
@@ -390,7 +544,7 @@ fn log_to_raa(scan_type: &str, target_label: &str, hash: &str, result_text: &str
         format!("Gatekeeper-{}-{}-{}.raa", scan_type, clean_label, timestamp)
     };
 
-    let manifest_path = audit_root.join(manifest_name);
+    let manifest_path = base_root.join(manifest_name);
     let log_entry = format!(
         "\n--- RAA FORENSIC REPORT ---\nType: {}\nTarget: {}\nHash: {}\nTimestamp: {}\nResult: \n{}\n---------------------------\n",
         scan_type, target_label, hash, Local::now().format("%Y-%m-%d %H:%M:%S"), result_text
@@ -415,14 +569,21 @@ async fn audit_command(
     model_name: String,
     vault_root_path: String,
 ) -> Result<RAAReport, String> {
+    eprintln!("[RAA-ORACLE] audit_command called with command: {}", command_str);
     let hash = get_content_hash(&command_str);
+    eprintln!("[RAA-ORACLE] computed hash: {}", hash);
+
     // Respect user-selected vault (handles ~ correctly)
-    let bible_dir = resolve_vault_root(&vault_root_path);
+    // Terminal command audits (the master "Bible") now live under RAA-Vault/Audit/
+    let bible_dir = resolve_operation_vault(&vault_root_path, "Audit");
     let bible_path = bible_dir.join("Gatekeeper-master-terminal-history.raa");
 
     if let Some(cached) = read_entry_from_disk(&bible_path, &hash) {
+        eprintln!("[RAA-ORACLE] BIBLE CACHE HIT for this exact command hash. Returning cached result without calling LLM.");
         return Ok(cached);
     }
+
+    eprintln!("[RAA-ORACLE] No bible cache hit. Calling LLM oracle now... base_url={}", base_url);
 
     let report = call_llm_auditor(
         &command_str,
@@ -432,6 +593,8 @@ async fn audit_command(
         &command_str,
     )
     .await?;
+
+    eprintln!("[RAA-ORACLE] LLM call returned. verdict={}, reasoning_len={}", report.verdict, report.reasoning.len());
 
     let path = log_to_raa("audit", &command_str, &hash, &report.reasoning, &vault_root_path);
     Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
@@ -476,14 +639,34 @@ async fn call_llm_auditor(
     let api_key = env::var("GROK_API_KEY").unwrap_or_default();
     let client = reqwest::Client::new();
 
+    eprintln!("[RAA-ORACLE] call_llm_auditor: context_type='{}', target='{}'", context_type, target);
+    eprintln!("[RAA-ORACLE]   base_url configured in UI: {}", base_url);
+    eprintln!("[RAA-ORACLE]   GROK_API_KEY present in env: {}", !api_key.is_empty());
+    if api_key.is_empty() {
+        eprintln!("[RAA-ORACLE]   WARNING: No GROK_API_KEY in environment. Sending empty Bearer token. This often breaks custom base_urls.");
+    }
+
     // HARDENED PROMPT: Forces technical depth
-    let system_prompt = format!(
-        "You are an RAA Security Auditor. Analyze this {} for threats. \
-        You MUST provide a lengthy, highly technical 1-paragraph explanation. \
-        Start your response with 'Audit Analysis for {}:' followed by the details. \
-        If safe, conclude with 'VERDICT: SAFE'. If dangerous, include 'VERDICT: VIOLATION'.",
-        context_type, target
-    );
+    let system_prompt = if context_type == "terminal command" {
+        "You are a strict RAA Terminal Command Security Auditor. \
+         You are analyzing a raw shell command that a user might type or run. \
+         Be extremely vigilant for: data exfiltration (curl, wget, nc to external hosts, base64 encoding of sensitive output like system_profiler, whoami, env, id, etc.), command substitution $(...), backticks, network calls, privilege escalation (sudo), destructive actions (rm -rf, > /dev/null), living-off-the-land techniques, or anything that could steal data or harm the system. \
+         A command like 'curl ... pornhub.com' with system data is a clear violation. \
+         A simple 'ls -la' is safe. \
+         You MUST provide a concise but technical explanation. \
+         Start with 'Audit Analysis for <command>:' . \
+         End with exactly 'VERDICT: SAFE' or 'VERDICT: VIOLATION'.".to_string()
+    } else {
+        format!(
+            "You are an RAA Security Auditor. Analyze this {} for threats. \
+            You MUST provide a lengthy, highly technical 1-paragraph explanation. \
+            Start your response with 'Audit Analysis for {}:' followed by the details. \
+            If safe, conclude with 'VERDICT: SAFE'. If dangerous, include 'VERDICT: VIOLATION'.",
+            context_type, target
+        )
+    };
+
+    eprintln!("[RAA-ORACLE]   Sending request to LLM... (model={})", model_name);
 
     let response = client
         .post(base_url)
@@ -503,13 +686,46 @@ async fn call_llm_auditor(
         })
         .send()
         .await
-        .map_err(|e| e.to_string())?;
-    let raw: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    let ai_response = raw["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("SAFE")
+        .map_err(|e| {
+            eprintln!("[RAA-ORACLE]   HTTP SEND ERROR to oracle: {}", e);
+            e.to_string()
+        })?;
+
+    eprintln!("[RAA-ORACLE]   HTTP response status from oracle: {}", response.status());
+
+    let raw: serde_json::Value = response.json().await.map_err(|e| {
+        eprintln!("[RAA-ORACLE]   JSON parse error from oracle response: {}", e);
+        e.to_string()
+    })?;
+
+    // Debug the shape of the response
+    let has_choices = raw.get("choices").is_some();
+    let content_path = raw.get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c0| c0.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str());
+    
+    eprintln!("[RAA-ORACLE]   Response has 'choices': {}", has_choices);
+    eprintln!("[RAA-ORACLE]   Extracted content present: {}", content_path.is_some());
+    if content_path.is_none() {
+        eprintln!("[RAA-ORACLE]   FULL RAW RESPONSE (first 2000 chars): {}", 
+            serde_json::to_string(&raw).unwrap_or_default().chars().take(2000).collect::<String>());
+    }
+
+    let ai_response = content_path
+        .unwrap_or("ORACLE_ERROR: failed to get content from LLM response")
         .to_string();
+
+    if ai_response.starts_with("ORACLE_ERROR") {
+        eprintln!("[RAA-ORACLE]   *** ORACLE CALL FAILED - not falling back to SAFE anymore ***");
+    } else if content_path.is_none() {
+        eprintln!("[RAA-ORACLE]   *** FALLING BACK (unexpected) ***");
+    }
+
     let is_violation = ai_response.to_uppercase().contains("VIOLATION");
+
+    eprintln!("[RAA-ORACLE]   Final ai_response length: {}, contains VIOLATION: {}", ai_response.len(), is_violation);
 
     Ok(RAAReport {
         verdict: if is_violation {
@@ -566,8 +782,77 @@ async fn scan_compressed_archive(
 ) -> Result<RAAReport, String> {
     let file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|e| e.to_string())?;
+
+    // =============================================
+    // STAGE 1 support for Archive path (New Path Forward)
+    // Create a dated job folder + initial control manifest immediately,
+    // before reading contents or calling the LLM for any internal file.
+    // Per-file .raa reports (using internal ZIP paths for hierarchy) and the
+    // aggregated report are now also written inside the job folder (matching Certify).
+    // =============================================
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let zip_file_name = std::path::Path::new(&zip_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("archive.zip");
+    let job_name = format!("{}-{}", sanitize_for_filename(zip_file_name), timestamp);
+    // Archive (zip) operations now root under RAA-Vault/Archive/
+    let vault_root = resolve_operation_vault(&vault_root_path, "Archive");
+    let job_folder = vault_root.join(&job_name);
+    if !job_folder.exists() {
+        let _ = fs::create_dir_all(&job_folder);
+    }
+
+    // Quick first pass over central directory to build the list of files we will actually audit
+    // (same filters as the processing loop below). Also collect skipped for the manifest.
+    let mut zip_audited_rel: Vec<std::path::PathBuf> = Vec::new();
+    let mut zip_skipped_rel: Vec<std::path::PathBuf> = Vec::new();
+    for i in 0..archive.len() {
+        if let Ok(zf) = archive.by_index(i) {
+            let name = zf.name().to_string();
+            if name.contains("__MACOSX") || name.split('/').last().unwrap_or("").starts_with("._") {
+                continue;
+            }
+            if zf.is_file() {
+                let ext = format!(".{}", name.split('.').last().unwrap_or("").to_lowercase());
+                if allowed_extensions.contains(&ext) {
+                    zip_audited_rel.push(std::path::PathBuf::from(name));
+                } else {
+                    zip_skipped_rel.push(std::path::PathBuf::from(name));
+                }
+            }
+        }
+    }
+
+    // Write initial control manifest early (with PENDING hashes). Will be overwritten at end with full DNA.
+    let initial_manifest = build_archive_control_manifest(
+        &zip_file_name,
+        &zip_path,
+        &job_name,
+        &timestamp,
+        &zip_audited_rel,
+        &zip_skipped_rel,
+        &HashMap::new(),
+    );
+    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
+    if let Err(e) = fs::write(&manifest_path, &initial_manifest) {
+        eprintln!("[RAA] WARNING: Failed to write initial ZIP control manifest: {}", e);
+    } else {
+        eprintln!("[RAA] Wrote INITIAL ~RAA-CONTROL-Manifest.log for archive at: {:?}", manifest_path);
+        let _ = window.emit(
+            "scan-event",
+            ScanEvent {
+                path: manifest_path.to_string_lossy().into(),
+                status: "ControlManifest".into(),
+            },
+        );
+    }
+
     let mut file_analyses = Vec::new();
     let mut violation_found = false;
+
+    // Collect real hashes for audited files as we process (for final DNA in manifest)
+    let mut audited_hashes: HashMap<std::path::PathBuf, String> = HashMap::new();
 
     for i in 0..archive.len() {
         if let Ok(mut zf) = archive.by_index(i) {
@@ -590,6 +875,9 @@ async fn scan_compressed_archive(
                 let content = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
                 let hash = get_content_hash(&content);
 
+                // Record hash for the manifest DNA registry
+                audited_hashes.insert(std::path::PathBuf::from(&name), hash.clone());
+
                 let report =
                     call_llm_auditor(&content, "archive internal", &base_url, &model_name, &name)
                         .await?;
@@ -611,13 +899,60 @@ async fn scan_compressed_archive(
                     report.reasoning.trim()
                 );
 
-                file_analyses.push(analysis_block);
+                file_analyses.push(analysis_block.clone());
+
+                // Write individual per-file .raa report inside the job folder (following the Certify pattern).
+                // Use the internal ZIP path (which may contain directories) as the relative structure.
+                let rel_path = std::path::PathBuf::from(&name);
+                let target_path = job_folder.join(&rel_path).with_extension("raa");
+                if let Some(parent) = target_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                match fs::write(&target_path, &analysis_block) {
+                    Ok(_) => {
+                        eprintln!("[RAA] Wrote per-file archive report inside job folder: {:?}", target_path);
+                    }
+                    Err(e) => {
+                        eprintln!("[RAA] WARNING: Failed to write per-file archive report {:?}: {}", target_path, e);
+                    }
+                }
             }
         }
     }
 
     let final_text = file_analyses.join("\n");
-    log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text, &vault_root_path);
+
+    // Finalize the ~RAA-CONTROL-Manifest.log at the end with full DNA Registry.
+    // This overwrites the initial version written early, exactly as done for Certify.
+    // Conforms to the visual structure and sections of the Certify reference output.
+    let final_manifest = build_archive_control_manifest(
+        &zip_file_name,
+        &zip_path,
+        &job_name,
+        &timestamp,
+        &zip_audited_rel,
+        &zip_skipped_rel,
+        &audited_hashes,
+    );
+    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
+    if let Err(e) = fs::write(&manifest_path, &final_manifest) {
+        eprintln!("[RAA] WARNING: Failed to finalize ~RAA-CONTROL-Manifest.log for archive: {}", e);
+    } else {
+        eprintln!("[RAA] Finalized ~RAA-CONTROL-Manifest.log for archive (with DNA) at: {:?}", manifest_path);
+    }
+
+    // Write the aggregated report inside the job folder (instead of root vault via legacy log_to_raa).
+    // This makes Archive follow the same job-folder + per-file pattern as Certify.
+    let report_filename = format!("{}-archive-{}.raa", sanitize_for_filename(zip_file_name), timestamp);
+    let report_path = job_folder.join(report_filename);
+    if let Err(e) = fs::write(&report_path, &final_text) {
+        eprintln!("[RAA] WARNING: Failed to write aggregated archive report to job folder: {}", e);
+    } else {
+        eprintln!("[RAA] Wrote aggregated archive report inside job folder: {:?}", report_path);
+    }
+
+    // Legacy root write is intentionally skipped for the new path.
+    // log_to_raa("archive", &zip_path, "ARCHIVE_BATCH", &final_text, &vault_root_path);
 
     Ok(RAAReport {
         verdict: if violation_found {
@@ -643,9 +978,10 @@ async fn generate_manifest(
     let folder_path_buf = fs::canonicalize(&folder_path).map_err(|_| "Path error")?;
 
     // =============================================
-    // STAGE 1: Create Job Folder + ~RAA-CONTROL-Manifest.log immediately
+    // STAGE 1 (New Path Forward): Create dated Job Folder + write the
+    // *initial* ~RAA-CONTROL-Manifest.log as the very first artifact.
+    // (See build_initial_control_manifest and the write immediately below.)
     // This is the very first action when a Certify job starts.
-    // The manifest is a minimal inventory + hierarchy of files that will be audited.
     // =============================================
     let timestamp = Local::now().format("%Y%m%d-%H%M%S").to_string();
 
@@ -656,7 +992,8 @@ async fn generate_manifest(
 
     let job_name = format!("{}-{}", sanitize_for_filename(source_folder_name), timestamp);
 
-    let vault_root = resolve_vault_root(&vault_root_path);
+    // Certify (folder) operations now root under RAA-Vault/Certify/
+    let vault_root = resolve_operation_vault(&vault_root_path, "Certify");
     let job_folder = vault_root.join(&job_name);
 
     // Create the dated job folder
@@ -682,9 +1019,42 @@ async fn generate_manifest(
         );
     }
 
-    // Control manifest writing is deferred until the end so we can include all DNA hashes.
+    // =============================================
+    // STAGE 1 (New Path Forward): Write the INITIAL ~RAA-CONTROL-Manifest.log
+    // *immediately* as the very first artifact inside the job folder.
+    // This happens before any content is read or any LLM calls are made.
+    // The manifest contains the full inventory + hierarchical directory
+    // structure using the exact same JUNK filter + extension rules as the audit.
+    // It will be overwritten at job end with the DNA Registry version.
+    // =============================================
+    let initial_manifest = build_initial_control_manifest(
+        &folder_path_buf,
+        &allowed_extensions,
+        source_folder_name,
+        &job_name,
+        &timestamp,
+    );
 
-    // Continue with original processing...
+    let manifest_path = job_folder.join("~RAA-CONTROL-Manifest.log");
+    match fs::write(&manifest_path, &initial_manifest) {
+        Ok(_) => {
+            eprintln!("[RAA] Wrote INITIAL ~RAA-CONTROL-Manifest.log (inventory + hierarchy) at: {:?}", manifest_path);
+            // Emit a scan-event so future right-pane "comfort feed" (Stage 2) can surface it.
+            // Using a distinct status for now; the placeholder right pane will ignore it.
+            let _ = window.emit(
+                "scan-event",
+                ScanEvent {
+                    path: manifest_path.to_string_lossy().into(),
+                    status: "ControlManifest".into(),
+                },
+            );
+        }
+        Err(e) => {
+            eprintln!("[RAA] WARNING: Failed to write initial control manifest {:?}: {}", manifest_path, e);
+        }
+    }
+
+    // Continue with original processing (hashing, bucketing, LLM, per-file reports, final manifest overwrite)...
     let mut target_files = Vec::new();
 
     let walker = WalkDir::new(&folder_path_buf)
@@ -1050,10 +1420,10 @@ async fn generate_manifest(
     }
 
     // =============================================
-    // Finalize and write the ~RAA-CONTROL-Manifest.log
-    // with DNA Registry (hashes) at the top.
-    // This gives us a single static-named file per job
-    // containing the full directory structure + every hash.
+    // Finalize / overwrite the ~RAA-CONTROL-Manifest.log
+    // with the full version containing the DNA Registry (hashes) at the top.
+    // This overwrites the initial inventory-only manifest written at job start.
+    // The result is one static-named file per job with inventory + hierarchy + DNA.
     // =============================================
     let final_manifest = build_final_control_manifest_with_dna(
         &folder_path_buf,
@@ -1123,6 +1493,13 @@ async fn create_vault_directory(root_path: String) -> Result<String, String> {
     fs::create_dir_all(&audit_root)
         .map_err(|e| format!("Failed to create RAA-Vault at {:?}: {}", audit_root, e))?;
 
+    // Ensure the operation-specific sub-roots exist for clean separation
+    // Audit (terminal commands), Analyze (single files), Archive (zips), Certify (folders)
+    for op in ["Audit", "Analyze", "Archive", "Certify"] {
+        let op_path = audit_root.join(op);
+        let _ = fs::create_dir_all(&op_path);
+    }
+
     Ok(audit_root.to_string_lossy().into_owned())
 }
 
@@ -1134,21 +1511,49 @@ async fn get_default_vault_path() -> Result<String, String> {
 }
 
 // --- LEDGER BROWSER COMMANDS ---
+
+/// Recursively collects .raa files from a directory (supports job folders inside operation roots).
+fn collect_raa_files(dir: &Path, files: &mut Vec<LedgerFile>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_raa_files(&path, files);
+            } else if path.extension().and_then(|e| e.to_str()) == Some("raa") {
+                let metadata = entry.metadata().ok();
+                let modified = metadata
+                    .as_ref()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| {
+                        let datetime: chrono::DateTime<chrono::Local> = t.into();
+                        Some(datetime.format("%Y-%m-%d %H:%M").to_string())
+                    })
+                    .unwrap_or_else(|| "unknown".into());
+
+                let size = metadata.map(|m| m.len()).unwrap_or(0);
+
+                let content = fs::read_to_string(&path).unwrap_or_default();
+                let has_violation = content.to_uppercase().contains("VIOLATION");
+
+                files.push(LedgerFile {
+                    name: path.file_name().unwrap_or_default().to_string_lossy().into(),
+                    path: path.to_string_lossy().into(),
+                    modified,
+                    size,
+                    has_violation,
+                });
+            }
+        }
+    }
+}
+
 #[tauri::command]
 async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, String> {
     // ============================================================
-    // TODO (New Path Forward - Ledger Browser)
-    // Currently this does a flat read_dir on the vault root only.
-    // With the new job folder model (RAA-Vault/JobName-YYYYMMDD-HHMMSS/),
-    // we need to either:
-    //   1. Recursively discover .raa files inside job folders, or
-    //   2. Change the UI to show job folders as containers that the user
-    //      can navigate into (like a directory tree).
-    //
-    // This work is explicitly tabled until the ~RAA-CONTROL-Manifest.log
-    // and per-file report writing inside job folders are stabilized.
-    //
-    // See RAA-NEWPATH-FORWARD.txt → Stage 5 and "Ledger Browser" notes.
+    // Ledger discovery now scans the operation roots (Audit/Analyze/Archive/Certify)
+    // and recurses to find .raa files (including those inside dated job folders).
+    // Full UI navigation of job folders as containers is still tabled per earlier notes.
+    // See RAA-NEWPATH-FORWARD.txt → Stage 5.
     // ============================================================
     let audit_root = resolve_vault_root(&vault_root_path);
 
@@ -1158,35 +1563,15 @@ async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, S
 
     let mut files: Vec<LedgerFile> = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(&audit_root) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("raa") {
-                continue;
-            }
+    // Collect from main vault root (for backward compatibility with any old flat files)
+    collect_raa_files(&audit_root, &mut files);
 
-            let metadata = entry.metadata().ok();
-            let modified = metadata
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| {
-                    let datetime: chrono::DateTime<chrono::Local> = t.into();
-                    Some(datetime.format("%Y-%m-%d %H:%M").to_string())
-                })
-                .unwrap_or_else(|| "unknown".into());
-
-            let size = metadata.map(|m| m.len()).unwrap_or(0);
-
-            let content = fs::read_to_string(&path).unwrap_or_default();
-            let has_violation = content.to_uppercase().contains("VIOLATION");
-
-            files.push(LedgerFile {
-                name: path.file_name().unwrap_or_default().to_string_lossy().into(),
-                path: path.to_string_lossy().into(),
-                modified,
-                size,
-                has_violation,
-            });
+    // Collect from the new operation-specific roots (Audit/Analyze/Archive/Certify)
+    // so that terminal masters, single-file reports, and job-folder contents are all discovered.
+    for op in ["Audit", "Analyze", "Archive", "Certify"] {
+        let op_root = audit_root.join(op);
+        if op_root.exists() {
+            collect_raa_files(&op_root, &mut files);
         }
     }
 

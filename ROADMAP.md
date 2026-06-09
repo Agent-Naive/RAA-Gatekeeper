@@ -121,10 +121,11 @@
 #### Stage 1: ~RAA-CONTROL-Manifest (First Stage — Current Focus)
 - On "Start Certification" or "Select ZIP Archive" click:
   - Immediately create the dated job folder in the vault.
-  - As the very first action, generate and write a `~RAA-CONTROL-Manifest.txt` (or similarly `~`-prefixed file) inside it.
+  - As the very first action, generate and write a `~RAA-CONTROL-Manifest.log` (static name) inside it.
   - The manifest must capture the complete inventory + full hierarchy of every file that will be considered for audit (respecting allowed extensions and junk filters).
   - This file becomes the permanent "audit control sheet" / scope declaration for that job.
   - Use the `~` prefix convention so the control manifest always sorts to the very top of the job folder when viewed in Finder / file explorers.
+- **Implemented (initial version):** The initial inventory/hierarchy manifest (without DNA) is now written immediately for both folder Certify and ZIP archive paths, before any content reads or LLM calls. It is later overwritten with the full DNA Registry version at job completion. See `build_initial_control_manifest` + early writes in `generate_manifest` and `scan_compressed_archive`.
 - This stage establishes the job folder as the atomic unit and gives every later artifact a stable home.
 
 #### Stage 2: Real-Time Right Pane — "What I Just Did" Comfort Feed
