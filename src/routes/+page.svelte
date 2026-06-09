@@ -1546,7 +1546,7 @@
                           {@const totalInJob = (entry.manifest ? 1 : 0) + entry.reports.length}
                           <details class="vault-job-accordion">
                             <summary class="vault-job-header">
-                              📂 {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
+                              📁 {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
                             </summary>
 
                             <!-- ~RAA-CONTROL-Manifest.log as the prominent root/anchor for this job folder -->
