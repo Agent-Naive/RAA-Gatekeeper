@@ -1565,23 +1565,21 @@
                                 tabindex="0"
                                 style="border-top: 1px solid #eee; font-weight: 600;"
                               >
-                                <!-- Compact line: trash first, then icon, then name (to shrink visual) -->
-                                <div style="display:flex; align-items:center; gap:3px;">
+                                <!-- Primary: icon + &nbsp;&nbsp; + name (per requested compact layout) -->
+                                <div style="display:flex; align-items:center;">
+                                  <span>📋</span>&nbsp;&nbsp;<span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {entry.manifest.name}
+                                  </span>
+                                </div>
+                                <!-- Bottom: 🗑&nbsp;&nbsp; + compact date -->
+                                <div class="vault-item-date">
                                   <button
                                     class="vault-delete-btn"
                                     onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(entry.manifest); }}
                                     title="Delete this manifest"
                                   >
                                     🗑
-                                  </button>
-                                  <span>📋</span>
-                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
-                                    {entry.manifest.name}
-                                  </span>
-                                </div>
-                                <!-- Compact date line below (trash moved to primary for density) -->
-                                <div class="vault-item-date">
-                                  {entry.manifest.modified}
+                                  </button>&nbsp;&nbsp;{entry.manifest.modified}
                                 </div>
                               </div>
                             {/if}
@@ -1601,25 +1599,23 @@
                                 tabindex="0"
                                 style="border-top: 1px solid #eee;"
                               >
-                                <!-- Compact line: trash first, then threat icon, then name (to shrink visual) -->
-                                <div style="display:flex; align-items:center; gap:3px;">
+                                <!-- Primary: icon + &nbsp;&nbsp; + name (per requested compact layout) -->
+                                <div style="display:flex; align-items:center;">
+                                  <span style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                                    {file.has_violation ? "🚨" : "🛡️"}
+                                  </span>&nbsp;&nbsp;<span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {file.name}
+                                  </span>
+                                </div>
+                                <!-- Bottom: 🗑&nbsp;&nbsp; + compact date (e.g. 20260609-102736) -->
+                                <div class="vault-item-date">
                                   <button
                                     class="vault-delete-btn"
                                     onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
                                     title="Delete this report"
                                   >
                                     🗑
-                                  </button>
-                                  <span style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
-                                    {file.has_violation ? "🚨" : "🛡️"}
-                                  </span>
-                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
-                                    {file.name}
-                                  </span>
-                                </div>
-                                <!-- Compact date line below (e.g. 20260609-102727) -->
-                                <div class="vault-item-date">
-                                  {file.modified}
+                                  </button>&nbsp;&nbsp;{file.modified}
                                 </div>
                               </div>
                             {/each}

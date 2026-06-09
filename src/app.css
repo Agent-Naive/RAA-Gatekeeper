@@ -745,12 +745,12 @@
 }
 
 .vault-item-date {
-  /* Compact second line under primary (trash+icon+name). Tucked to align under filename for shrunk visual. */
+  /* Bottom meta line: 🗑&nbsp;&nbsp; + compact date. Starts at same indent as the icon above for column alignment. */
   display: block;
   font-size: 9px;
   color: #666;
   margin-top: 1px;
-  padding-left: 24px;
+  padding-left: 0;
   line-height: 1;
 }
 
