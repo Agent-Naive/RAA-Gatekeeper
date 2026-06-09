@@ -238,6 +238,12 @@
   let deleteConfirmPath = $state<string | null>(null);
   let deleteConfirmName = $state<string | null>(null);
 
+  // Controlled open states for vault accordions (top-level subs + nested job folders).
+  // Ensures they start closed, icons toggle on open/closed, and clicking a top-level sub
+  // does not auto-open its nested job folders.
+  let subOpenStates = $state<Record<string, boolean>>({});
+  let jobOpenStates = $state<Record<string, Record<string, boolean>>>({});
+
   let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
   let activeFiles = $state<string[]>([]);
 
@@ -1534,9 +1540,15 @@
                   {#each ['Certify', 'Archive', 'Analyze', 'Audit'] as op}
                     {@const subGroups = groups[op] || {}}
                     {@const jobKeys = Object.keys(subGroups)}
-                    <details class="vault-sub-accordion">
+                    <details
+                      class="vault-sub-accordion"
+                      open={subOpenStates[op] ?? false}
+                      ontoggle={(e) => {
+                        subOpenStates[op] = (e.currentTarget as HTMLDetailsElement).open;
+                      }}
+                    >
                       <summary class="vault-sub-header">
-                        📁 {op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
+                        <span class="folder-closed">📁 </span><span class="folder-open">📂 </span>{op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
                       </summary>
                       {#if jobKeys.length === 0}
                         <div class="vault-sub-empty">(no reports yet)</div>
@@ -1544,9 +1556,16 @@
                         {#each jobKeys as jobFolder}
                           {@const entry = subGroups[jobFolder]}
                           {@const totalInJob = (entry.manifest ? 1 : 0) + entry.reports.length}
-                          <details class="vault-job-accordion">
+                          <details
+                            class="vault-job-accordion"
+                            open={jobOpenStates[op]?.[jobFolder] ?? false}
+                            ontoggle={(e) => {
+                              if (!jobOpenStates[op]) jobOpenStates[op] = {};
+                              jobOpenStates[op][jobFolder] = (e.currentTarget as HTMLDetailsElement).open;
+                            }}
+                          >
                             <summary class="vault-job-header">
-                              📁 {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
+                              <span class="folder-closed">📁 </span><span class="folder-open">📂 </span>{jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
                             </summary>
 
                             <!-- ~RAA-CONTROL-Manifest.log as the prominent root/anchor for this job folder -->
