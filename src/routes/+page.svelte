@@ -238,6 +238,10 @@
   let deleteConfirmPath = $state<string | null>(null);
   let deleteConfirmName = $state<string | null>(null);
 
+  // Canonical display order for the 4 top-level vault operation subs.
+  // Matches the order used in Rust (create_vault_directory + list_vault_files).
+  const vaultSubOrder = ['Audit', 'Analyze', 'Archive', 'Certify'] as const;
+
   // Controlled open states for vault accordions (top-level subs + nested job folders).
   // Ensures they start closed, icons toggle on open/closed, and clicking a top-level sub
   // does not auto-open its nested job folders.
@@ -891,7 +895,7 @@
     return vaultFiles.filter((f) => f.name.toLowerCase().includes(q));
   }
 
-  // Group reports by the typed sub-directory (Certify, Archive, etc.) so the
+  // Group reports by the typed sub-directory (Audit, Analyze, Archive, Certify) so the
   // Forensic Vault acts more like a finder showing the directory structure
   // under RAA-Vault.
   // Updated for Phase 2: now also groups by dated job folder inside each sub,
@@ -901,13 +905,14 @@
   // Do not delete or alter this grouping. It makes the subs visible as directories in the finder.
   // If removed, the structure the integrity check expects may be affected in UI/tests.
   function getGroupedVaultReports() {
-    const ops = ['Certify', 'Archive', 'Analyze', 'Audit'];
+    const ops = [...vaultSubOrder];
     // Build nested structure: sub -> jobFolder -> { manifest, reports }
     // This uses ~RAA-CONTROL-Manifest.log as the anchor/root for each job folder.
     // Client-side grouping from the flat list returned by list_vault_files (which already recurses into job folders).
     // See previous design discussion for Phase 2 accordion + manifest-as-root.
     const groups: Record<string, Record<string, {manifest: any | null, reports: any[]}>> = {
-      Certify: {}, Archive: {}, Analyze: {}, Audit: {}, Other: {}
+      ...Object.fromEntries(vaultSubOrder.map(op => [op, {}] as const)),
+      Other: {}
     };
 
     for (const f of filteredVaultFiles()) {
@@ -1537,7 +1542,7 @@
                        Subs > job folders > manifest + reports.
                        Selection only on reports or manifest (no whole job folder selection).
                        Client-side grouping from flat list. -->
-                  {#each ['Certify', 'Archive', 'Analyze', 'Audit'] as op}
+                  {#each vaultSubOrder as op}
                     {@const subGroups = groups[op] || {}}
                     {@const jobKeys = Object.keys(subGroups)}
                     <details
