@@ -916,6 +916,21 @@
   font-size: 11px;
 }
 
+/* Folder icon toggle: closed (📁) when collapsed, open (📂) when expanded.
+   Uses [open] attribute from native <details> for toggle state (no JS needed). */
+.vault-sub-accordion .folder-open,
+.vault-job-accordion .folder-open {
+  display: none;
+}
+.vault-sub-accordion[open] .folder-open,
+.vault-job-accordion[open] .folder-open {
+  display: inline;
+}
+.vault-sub-accordion[open] .folder-closed,
+.vault-job-accordion[open] .folder-closed {
+  display: none;
+}
+
 /* Visual indent for items (manifest + reports) under a job folder header, for tree structure */
 .vault-job-accordion .vault-row,
 .vault-job-accordion .vault-manifest-row {
