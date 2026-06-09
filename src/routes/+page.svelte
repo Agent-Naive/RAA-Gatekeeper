@@ -1534,7 +1534,7 @@
                   {#each ['Certify', 'Archive', 'Analyze', 'Audit'] as op}
                     {@const subGroups = groups[op] || {}}
                     {@const jobKeys = Object.keys(subGroups)}
-                    <details class="vault-sub-accordion" open>
+                    <details class="vault-sub-accordion">
                       <summary class="vault-sub-header">
                         📁 {op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
                       </summary>
@@ -1544,7 +1544,7 @@
                         {#each jobKeys as jobFolder}
                           {@const entry = subGroups[jobFolder]}
                           {@const totalInJob = (entry.manifest ? 1 : 0) + entry.reports.length}
-                          <details class="vault-job-accordion" open>
+                          <details class="vault-job-accordion">
                             <summary class="vault-job-header">
                               📂 {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
                             </summary>
