@@ -746,12 +746,14 @@
 
 .vault-item-date {
   /* Bottom meta line: 🗑&nbsp;&nbsp; + compact date. 
+     Font size + boldness now uniform (11px, inherits weight) to match filenames (.vault-item-name), icons, and all other vault tree text.
+     (Manifest rows get bold via parent inline font-weight:600; regular rows stay normal.)
      Uses flex + center to vertically align the trash icon exactly like the bare shield/police icons in the primary line.
      Starts at same indent as the icon above for column alignment. */
   display: flex;
   align-items: center;
-  font-size: 9px;
-  color: #666;
+  font-size: 11px;
+  color: #ddd;  /* match filename color (.vault-item-name) for full uniformity across the file lines */
   margin-top: 1px;
   padding-left: 0;
   line-height: 1;
