@@ -745,8 +745,11 @@
 }
 
 .vault-item-date {
-  /* Bottom meta line: 🗑&nbsp;&nbsp; + compact date. Starts at same indent as the icon above for column alignment. */
-  display: block;
+  /* Bottom meta line: 🗑&nbsp;&nbsp; + compact date. 
+     Uses flex + center to vertically align the trash icon exactly like the bare shield/police icons in the primary line.
+     Starts at same indent as the icon above for column alignment. */
+  display: flex;
+  align-items: center;
   font-size: 9px;
   color: #666;
   margin-top: 1px;
@@ -1021,7 +1024,7 @@
   border: none;
   color: #666;
   font-size: 11px;
-  padding: 1px 4px;
+  padding: 0;
   border-radius: 3px;
   cursor: pointer;
   opacity: 0.55;
