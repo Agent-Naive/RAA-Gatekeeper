@@ -916,27 +916,6 @@
   font-size: 11px;
 }
 
-/* Closed/open folder icon toggle for top-level subs and nested job folders.
-   Uses native <details>[open] + controlled Svelte state.
-   Top-level and nested both support the function.
-   Nested: 📁 when closed, 📂 when open (as requested). */
-.vault-sub-accordion .folder-closed,
-.vault-job-accordion .folder-closed {
-  display: inline;
-}
-.vault-sub-accordion .folder-open,
-.vault-job-accordion .folder-open {
-  display: none;
-}
-.vault-sub-accordion[open] .folder-closed,
-.vault-job-accordion[open] .folder-closed {
-  display: none;
-}
-.vault-sub-accordion[open] .folder-open,
-.vault-job-accordion[open] .folder-open {
-  display: inline;
-}
-
 /* Visual indent for items (manifest + reports) under a job folder header, for tree structure */
 .vault-job-accordion .vault-row,
 .vault-job-accordion .vault-manifest-row {

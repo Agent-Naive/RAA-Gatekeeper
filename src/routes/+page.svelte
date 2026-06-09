@@ -1548,7 +1548,7 @@
                       }}
                     >
                       <summary class="vault-sub-header">
-                        <span class="folder-closed">📁 </span><span class="folder-open">📂 </span>{op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
+                        {subOpenStates[op] ? '📂' : '📁'} {op}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({jobKeys.length} jobs)</span>
                       </summary>
                       {#if jobKeys.length === 0}
                         <div class="vault-sub-empty">(no reports yet)</div>
@@ -1565,7 +1565,7 @@
                             }}
                           >
                             <summary class="vault-job-header">
-                              <span class="folder-closed">📁 </span><span class="folder-open">📂 </span>{jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
+                              {jobOpenStates[op]?.[jobFolder] ? '📂' : '📁'} {jobFolder}<br><span style="font-weight: normal; color: #888; padding-left: 1.3em;">({totalInJob})</span>
                             </summary>
 
                             <!-- ~RAA-CONTROL-Manifest.log as the prominent root/anchor for this job folder -->
