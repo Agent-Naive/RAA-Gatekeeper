@@ -1,5 +1,5 @@
 # RAA-NEWPATH-FORWARD.txt
-# Comprehensive Reference — Granular Per-File Forensic Ledger Architecture
+# Comprehensive Reference — Granular Per-File Forensic Vault Architecture
 # Created for fallback / clarity if Grok or future sessions lose context
 
 ================================================================================
@@ -9,7 +9,7 @@
 Primary Goal:
 Move RAA-Gatekeeper from "one big .raa report per job" to a true **ONE FILE = ONE REPORT** model.
 
-Every individual file that receives an AI forensic audit (whether it lives loose in a folder or inside a ZIP) will produce its own self-contained `.raa` ledger file. That ledger will contain:
+Every individual file that receives an AI forensic audit (whether it lives loose in a folder or inside a ZIP) will produce its own self-contained `.raa` vault file. That vault entry will contain:
 - The full oracle "Analysis" paragraph (not just verdict)
 - A clear verdict
 - The file's DNA (SHA-256 content hash)
@@ -23,7 +23,7 @@ As the very first action on "Start", we create:
 This gives Joe (and the creator) a clean, professional, forensic-grade package that is easy to review later, easy to reason about after the fact, and gives every file strong, independent DNA ownership.
 
 User's explicit reasons (captured during deep reasoning):
-- Each file owning its own hash in its own ledger is easier to deal with long-term for DNA verification.
+- Each file owning its own hash in its own vault entry is easier to deal with long-term for DNA verification.
 - After a run of 80 files (75 reports + 5 skipped), it is far easier to do post-facto analysis, after-action reporting, or find a singular culprit when you have discrete files + a master control manifest than when you have to parse one giant monolithic report.
 - Job folders + hierarchy mirroring make the vault feel organized and make duplicate filename situations safe.
 - The right pane provides real-time comfort ("here is what I just did") while a long job is running.
@@ -35,7 +35,7 @@ This is a personal hobby / re-learning / "masterpiece" project. Coding cost and 
 ================================================================================
 
 1. ONE FILE = ONE REPORT
-   - No more single aggregated ledger with dozens of "--- RAA FILE ANALYSIS ---" blocks + one OVERALL header as the primary persisted artifact.
+   - No more single aggregated report with dozens of "--- RAA FILE ANALYSIS ---" blocks + one OVERALL header as the primary persisted artifact.
    - Each audited file gets its own `.raa`.
 
 2. Job Folders (dated containers)
@@ -66,7 +66,7 @@ This is a personal hobby / re-learning / "masterpiece" project. Coding cost and 
      - Gives the user visible forward progress and psychological comfort during long Certify or Archive runs.
      - Not intended for click-to-open or deep interaction yet (the "YET" <wink>).
    - **Future possibilities (explicitly parked):**
-     - Right pane could become a live view of the actual ledger content.
+     - Right pane could become a live view of the actual vault content.
      - Right pane could dynamically show skipped files + reasons (extension filter, junk, failure, etc.).
      - Eventually a dedicated Reports section (possibly with PDF output) that summarizes an entire job using the control manifest + the individual .raa files.
 
@@ -99,7 +99,7 @@ Stage 3: Per-File .raa Emission + Job Folder Writing (Core Granular Work)
 - Refactor generate_manifest and scan_compressed_archive so that instead of (or in addition to) building one big string, they write individual rich .raa files for each audited file.
 - Use the job folder created in Stage 1 as the destination.
 - Apply hierarchy mirroring where possible.
-- Each written file should be a complete, standalone, high-quality forensic ledger for exactly one file.
+- Each written file should be a complete, standalone, high-quality forensic vault entry for exactly one file.
 - Update RAAReport return types and success/error handling as needed for partial success across many files.
 
 Stage 4: Archive Path Full Alignment
@@ -107,20 +107,20 @@ Stage 4: Archive Path Full Alignment
 - Decide on job folder naming for ZIP sources (e.g. based on the zip filename).
 - Keep the in-memory safety model.
 
-Stage 5: Ledger Browser & DNA Updates for Job Folders
-- Make list_ledger_files, the ledger UI, DNA extraction, and verification aware of job folders.
+Stage 5: Vault Browser & DNA Updates for Job Folders
+- Make list_vault_files, the vault UI, DNA extraction, and verification aware of job folders.
 - The control manifest should be easily discoverable and perhaps specially rendered when a job is selected.
 
 **IMPORTANT NOTE (Tabled Work):**
-The current ledger browser (both Rust `list_ledger_files` and the Svelte UI) does a flat directory listing of the vault root.
+The current vault browser (both Rust `list_vault_files` and the Svelte UI) does a flat directory listing of the vault root.
 It does **not** yet understand or display the new dated job folders.
 Until the ~RAA-CONTROL-Manifest.log and the writing of .raa reports inside job folders are in a stable state that the user is happy with,
-we are deliberately **not** rewriting the ledger listing logic.
-See the TODO comment at the top of `list_ledger_files` in lib.rs for details.
+we are deliberately **not** rewriting the vault listing logic.
+See the TODO comment at the top of `list_vault_files` in lib.rs for details.
 This is intentionally deferred.
 
 Later Stages (explicitly future):
-- Right pane evolution (clickable / live ledger / skipped with reasons)
+- Right pane evolution (clickable / live vault / skipped with reasons)
 - New Reports section + possible PDF generation
 - Any vault visualization improvements, job-level metadata, etc.
 
@@ -133,7 +133,7 @@ Rust side (src-tauri/src/lib.rs):
 - scan_compressed_archive (the per-file in-memory ZIP walker)
 - log_to_raa (the current writer — will need to become job-folder aware or be replaced/supplemented)
 - resolve_vault_root + related vault helpers
-- list_ledger_files, read_single_ledger_file, delete_ledger_file
+- list_vault_files, read_single_vault_file, delete_vault_file
 - FileJob struct, bucket logic, FileAnalysis JSON struct (recent structured output work)
 - RAAReport return type (recently hardened for is_error)
 
@@ -154,12 +154,12 @@ Svelte side (src/routes/+page.svelte):
 - resetResults (clears activeFiles + skippedFiles)
 - scan-event listener (Active vs Skipped)
 - activeFiles / skippedFiles state and the dual-pane + (future) right-pane rendering
-- extractRecordedHashes + DNA verification logic (will need to handle per-file ledgers and job folders)
+- extractRecordedHashes + DNA verification logic (will need to handle per-file vault entries and job folders)
 - currentReport, certMsg, timers, etc.
 
 CSS (src/app.css):
 - .dual-pane-monitor and .pane rules
-- New styles will be needed for the right-pane comfort feed and eventually job-folder-aware ledger list
+- New styles will be needed for the right-pane comfort feed and eventually job-folder-aware vault list
 
 Other important files:
 - grok.review.txt (permanent mission + push discipline + capture points)
@@ -204,7 +204,7 @@ Per-file reports inside the job folder:
 - Maintain zero warnings / zero errors discipline.
 - Follow strict git push rules (local commits frequent, pushes only at clear milestones or end of day, ask first).
 - Enduring principle: A Certify job must never be allowed to appear successful if any audited file contains a violation. This must be enforced in the new per-file + job folder model.
-- Ledger browser is currently flat-only (no job folder navigation). Full directory-style browsing of the vault is explicitly tabled until the ~RAA-CONTROL-Manifest.log experience is finalized. See the detailed note in Stage 5 and the TODO in list_ledger_files.
+- Vault browser is currently flat-only (no job folder navigation). Full directory-style browsing of the vault is explicitly tabled until the ~RAA-CONTROL-Manifest.log experience is finalized. See the detailed note in Stage 5 and the TODO in list_vault_files.
 
 ================================================================================
 ## 8. OPEN / TABLED QUESTIONS (FROM REASONING SESSIONS)

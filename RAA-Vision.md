@@ -35,5 +35,5 @@ A pre-execution audit layer that filters terminal commands for destructive wildc
 
 ## 3. The RAA Standard: "Trust, then Certify"
 The ultimate goal is to move the AI industry toward **.raa Certification**.
--   **The Ledger:** Every file interaction is recorded in a tamper-proof `.raa` forensic report.
+-   **The Vault:** Every file interaction is recorded in a tamper-proof `.raa` forensic vault entry.
 -   **The Vision:** To build an ecosystem where "Restrictive Ability" is a sellable, auditable, and lucrative standard—providing the trust infrastructure the AI revolution currently lacks.

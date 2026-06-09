@@ -91,11 +91,11 @@ These rules exist specifically because this project uses Grok Build and GitHub p
 
 ## 2026-05-30 — End of Day Review
 
-**Session Focus:** Heavy UI/UX refinement on Ledger view and Integrity Guard, CSS architecture improvements, delete report feature, and critical bug documentation.
+**Session Focus:** Heavy UI/UX refinement on Vault view and Integrity Guard, CSS architecture improvements, delete report feature, and critical bug documentation.
 
 ### Major Accomplishments
 - Restored and significantly improved the **Integrity Guard** page (it had lost most of its visual structure during earlier CSS cleanup). Now has a clean, card-based grid layout.
-- Major improvements to the **Ledger left pane**:
+- Major improvements to the **Vault left pane**:
   - Width reduced to 300px (user confirmed "300px is nice").
   - Delete button (🗑) moved from the top line to the bottom line alongside the date (right-aligned).
   - Added consistent right-edge padding alignment so the filter input, filename truncation, and trashcan all share the same visual gutter.
@@ -106,11 +106,11 @@ These rules exist specifically because this project uses Grok Build and GitHub p
 
 **Current State:** Working tree is clean. All work pushed.
 
-### Key Current UI State (Ledger)
+### Key Current UI State (Vault)
 - **Left Pane:** 300px fixed width. Two-line row design (filename on top, date + trashcan on bottom).
 - **Right Pane:** Min 480px / Max 620px.
 - Delete confirmation uses a custom modal (not browser `confirm()`).
-- Backend has a safe `delete_ledger_file` command with vault boundary checks.
+- Backend has a safe `delete_vault_file` command with vault boundary checks.
 
 ### Important Notes from This Session
 - The user is very iterative and gives precise, direct feedback ("300px is nice", "move the trashcan to the bottom line").
@@ -135,18 +135,18 @@ These rules exist specifically because this project uses Grok Build and GitHub p
   3. Stores the **actual parent path** (e.g. `/Users/joe/Documents`) instead of leaving `vaultRootPath` empty.
 - "Set Default to ~/Documents/RAA_Vault" button now resolves the real path and stores it (instead of setting empty string).
 - Added a one-time session notification in Settings when the default vault is auto-created on first run.
-- `ensureVault()` and `loadLedgerData()` now behave more consistently because we prefer having a real path early.
+- `ensureVault()` and `loadVaultData()` now behave more consistently because we prefer having a real path early.
 - Centralized `normalizeVaultPath()` helper is used everywhere.
 
 ### Why This Was Done
-The previous "empty string = default" convention was causing confusing state when users mixed the "Set Default" button with manual Finder selection of the default folder. This led to Ledger not refreshing properly after restarts.
+The previous "empty string = default" convention was causing confusing state when users mixed the "Set Default" button with manual Finder selection of the default folder. This led to Vault not refreshing properly after restarts.
 
 By creating the folder on first run and always storing a concrete path, we eliminate most of the fragile dual-state logic (`""` vs real path).
 
 ### Impact on Future Development
 - `vaultRootPath = ""` is now mostly a fallback / reset state rather than the normal "default" representation.
 - Most code paths can now assume `vaultRootPath` contains a real directory.
-- This should make Ledger loading, auditing, and path handling much more reliable.
+- This should make Vault loading, auditing, and path handling much more reliable.
 
 ---
 
@@ -196,7 +196,7 @@ for job in bucket {
         report.verdict,
         report.reasoning.trim()     // ← The SAME reasoning is used for every file
     );
-    ledger_entries.push_str(&analysis_block);
+    report_entries.push_str(&analysis_block);
 }
 ```
 
@@ -224,7 +224,7 @@ FILE 2 ANALYSIS:
 We could write code that tries to detect these sections and then assign the correct piece of reasoning to each file’s `Analysis:` block.
 
 **Pros:**
-- The ledger would actually contain different, relevant analysis for each file.
+- The vault entry would actually contain different, relevant analysis for each file.
 - Much higher forensic value.
 
 **Cons / Difficulties:**
@@ -326,8 +326,8 @@ RAA-Vault/
 - Moving or renaming test directories requires manually re-arming the watcher with the new paths. The watcher does not auto-update.
 - Watcher behavior on external drives (`/Volumes/...`) can still be inconsistent due to FSEvents limitations on macOS.
 - Editor temp files (`.sb-*` files from Sublime Text, etc.) generate a lot of noise in the watcher. We may want to filter more aggressively later.
-- The ledger browser (`list_ledger_files`) is still completely flat and does not understand job folders yet. This was explicitly tabled until the manifest + per-file reports stabilized.
-- DNA verification currently depends on the user having the correct report selected. With per-file reports now scattered inside job folders, this will become increasingly painful until we improve the ledger UI.
+- The vault browser (`list_vault_files`) is still completely flat and does not understand job folders yet. This was explicitly tabled until the manifest + per-file reports stabilized.
+- DNA verification currently depends on the user having the correct report selected. With per-file reports now scattered inside job folders, this will become increasingly painful until we improve the vault UI.
 
 ### Current UI State (Header)
 
@@ -348,7 +348,7 @@ RAA-Vault/
 ### Open Questions / Next Priorities
 
 1. **DNA Verification Flow** — Now that we have per-file reports + a DNA Registry in the manifest, how should the watcher + verification actually work? Should it look first in the manifest? Should it scan job folders?
-2. **Ledger Browser for Job Folders** — Still tabled, but becoming increasingly necessary.
+2. **Vault Browser for Job Folders** — Still tabled, but becoming increasingly necessary.
 3. **Watcher Noise** — Should we add more aggressive filtering for editor temp files (`.sb-*`, etc.)?
 4. **Settings Page Scrolling** — User strongly dislikes scrolling in Settings on Mac. Future mandatory improvement: button-driven sections instead of one long page.
 5. **Toast Polish** — User is testing `min-width: 300px`. May want further adjustments to width, height, or behavior.
@@ -388,9 +388,9 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - **Current Status:** Active Development — Phase 3 + 4 Core Complete + **New Granular Architecture Path Initiated**.
 - **Last Major Update:** Definition of the New Path Forward (ONE FILE = ONE REPORT + dated Job Folders + `~RAA-CONTROL-Manifest` as the first artifact).
 - Phases 1+2 (Core Engine & Performance) and core Phase 3+4 (Forensic UI & Silent Monitoring) are marked COMPLETE (terminal auditing with Bible cache, deep file + archive scanning, parallel Rayon hashing, Silent Watcher with DNA alerts, Integrity Guard, user-selectable vault, real-time timers, etc.).
-- "Currently In Progress / Next" items remain open: Rich Ledger Browser, DNA Verification UI, Export Reports, Violation History Dashboard ("Wall of Shame"), Token Economy Counter.
+- "Currently In Progress / Next" items remain open: Rich Vault Browser, DNA Verification UI, Export Reports, Violation History Dashboard ("Wall of Shame"), Token Economy Counter.
 - Significant polish note: Settings page reorganization into button-driven sections is called out as a **Mandatory UI Improvement (Deferred)** due to excessive scrolling pain on macOS.
-- Dominant content is the detailed **New Path Forward** section with 6 explicit stages (see below). Ledger browser work is *explicitly tabled* until `~RAA-CONTROL-Manifest` + per-file report writing inside job folders are stable. See TODO comments in `src-tauri/src/lib.rs` (especially `list_ledger_files`) and the full details in RAA-NEWPATH-FORWARD.txt.
+- Dominant content is the detailed **New Path Forward** section with 6 explicit stages (see below). Vault browser work is *explicitly tabled* until `~RAA-CONTROL-Manifest` + per-file report writing inside job folders are stable. See TODO comments in `src-tauri/src/lib.rs` (especially `list_vault_files`) and the full details in RAA-NEWPATH-FORWARD.txt.
 
 **New Path Forward (the active architecture we are implementing):**
 - Shift from monolithic "one big .raa per job" (with internal blocks) to **ONE FILE = ONE REPORT**.
@@ -406,7 +406,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
   2. Real-Time Right Pane Comfort Feed.
   3. Per-File .raa Writing + Job Folder Hierarchy Mirroring (core of the granular model; partial implementation already landed in 2026-05-30 session).
   4. Archive Path Full Alignment.
-  5. Ledger Browser Evolution for Job Folders (currently tabled).
+  5. Vault Browser Evolution for Job Folders (currently tabled).
   6+. Future (right pane clickable, skipped files moved dynamically, job-level summaries, export, etc.).
 
 **From 2026-05-30 Session History (previous entry in this file):**
@@ -415,19 +415,19 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 - UI: Header restructured to 3-column CSS grid (left: logo/title, center: toasts, right: version). Both mission-success and watcher DNA toasts moved into `.header-center`.
 - Watcher fixes (removed harmful broad `~` filter that was dropping events on test dirs and external volumes).
 - Vault improvements (proactive default `~/Documents/RAA_Vault` creation + storing concrete path on first run).
-- Ledger UI polish (300px left pane, delete report with confirmation modal, consistent padding).
+- Vault UI polish (300px left pane, delete report with confirmation modal, consistent padding).
 - "Capture Value of Audit" checkpoint captured the state of multi-file bucketing + prompting logic before structured output improvements.
-- Open questions carried forward: DNA verification flow (manifest vs. per-file reports vs. job folders), ledger browser for job folders, watcher noise filtering, Settings scrolling pain, toast width polish.
+- Open questions carried forward: DNA verification flow (manifest vs. per-file reports vs. job folders), vault browser for job folders, watcher noise filtering, Settings scrolling pain, toast width polish.
 - Recommendations from that session are still highly relevant (re-arm watcher after dir moves, use manifest for hashes, per-file reports are the future, etc.).
 
 **From RAA-Vision.md + PDF references:**
 - Core philosophy: RAA (Restrictive Ability) as the modular "DLL standard" for AI security/trust. RAA-Gatekeeper is the Read-Only Auditor (ROA) — non-invasive forensic layer between local code and AI agents.
 - DNA Fingerprinting (hashes guarantee "what was audited is what is passed"), junk filtering (especially macOS `__MACOSX` / `._`), LLM oracles for signature detection, compliance, and agent-hijack guarding.
 - Target user "Joe": regular end-user (not dev) who downloads a zip/folder/AI-built project and needs protection before running it.
-- "Trust, then Certify" as the cultural standard. Every interaction recorded in tamper-proof `.raa` ledgers. The PDF (inaccessible here) is the April 2026 origin document for these ideas.
+- "Trust, then Certify" as the cultural standard. Every interaction recorded in tamper-proof `.raa` vault entries. The PDF (inaccessible here) is the April 2026 origin document for these ideas.
 
 **From RAA-NEWPATH-FORWARD.txt (critical long-term reference — always re-read when working on the new architecture):**
-- Full rationale, locked decisions, technical mapping (which functions live where: `generate_manifest`, `scan_compressed_archive`, `log_to_raa`, `list_ledger_files`, `resolve_vault_root`, Svelte handlers, etc.), naming conventions, Joe experience targets, constraints (preserve skipped logic as temporary holding pattern for now, zero-mutation, etc.), success criteria for Stage 1, and open/tabled questions.
+- Full rationale, locked decisions, technical mapping (which functions live where: `generate_manifest`, `scan_compressed_archive`, `log_to_raa`, `list_vault_files`, `resolve_vault_root`, Svelte handlers, etc.), naming conventions, Joe experience targets, constraints (preserve skipped logic as temporary holding pattern for now, zero-mutation, etc.), success criteria for Stage 1, and open/tabled questions.
 - Explicitly created so full context survives long gaps or context resets.
 - Junk filter list (`JUNK_NAMES`) must stay in sync between manifest generation and control manifest building (includes node_modules, .git, target, dist, __MACOSX, .DS_Store — last added 2026-05-30).
 
@@ -446,7 +446,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 ### Open Questions / Next Priorities (Carried Forward + New from This Session)
 1. Stabilize **Stage 1 (~RAA-CONTROL-Manifest)**: Job folder creation on Start + writing the static `~RAA-CONTROL-Manifest.log` (full inventory + hierarchy using the same filters as auditing) as the very first artifact. Emit events for right-pane comfort feed.
 2. **Stage 2**: Wire the right pane as live emission log for .raa files as they are created (left pane stays "📡 Audited", bottom bar preserves skipped logic).
-3. Un-table and evolve **Ledger Browser + DNA Verification** for job folders + per-file reports (currently the biggest gap for post-facto usability).
+3. Un-table and evolve **Vault Browser + DNA Verification** for job folders + per-file reports (currently the biggest gap for post-facto usability).
 4. Address mandatory Settings page UX (reorganize to sections/tabs to eliminate long scrolling).
 5. DNA verification flow redesign now that reports live per-file inside job folders (manifest as single source of truth?).
 6. Watcher noise filtering improvements (editor temp files, etc.).
@@ -455,7 +455,7 @@ Today was a genuinely productive day. We made real, visible progress on the gran
 
 ### Recommendations for Future Grok Inference Sessions
 - **Always begin by reading the PERMANENT KNOWLEDGE section (top of this file) + the most recent session review(s).**
-- Re-read ROADMAP.md + the entire RAA-NEWPATH-FORWARD.txt before making changes to auditing flows, manifest writing, or ledger code.
+- Re-read ROADMAP.md + the entire RAA-NEWPATH-FORWARD.txt before making changes to auditing flows, manifest writing, or vault code.
 - Cross-reference the staged plan and "locked decisions" when implementing.
 - When testing, use the existing test directories (e.g. test-directory02) and re-arm the watcher after any renames/moves.
 - Maintain zero warnings, zero errors, and the read-only + advisory-only invariants.

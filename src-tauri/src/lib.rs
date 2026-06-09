@@ -49,6 +49,10 @@ struct RAAReport {
 struct ScanEvent {
     path: String,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verdict: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 #[derive(Clone)]
@@ -60,7 +64,7 @@ struct FileJob {
 }
 
 #[derive(Serialize, Clone)]
-struct LedgerFile {
+struct VaultFile {
     name: String,
     path: String,
     modified: String,
@@ -844,6 +848,8 @@ async fn scan_compressed_archive(
             ScanEvent {
                 path: manifest_path.to_string_lossy().into(),
                 status: "ControlManifest".into(),
+                verdict: None,
+                reason: None,
             },
         );
     }
@@ -868,6 +874,8 @@ async fn scan_compressed_archive(
                     ScanEvent {
                         path: name.clone(),
                         status: "Active".into(),
+                        verdict: None,
+                        reason: None,
                     },
                 );
                 let mut buffer = vec![0; 2 * 1024 * 1024];
@@ -911,6 +919,15 @@ async fn scan_compressed_archive(
                 match fs::write(&target_path, &analysis_block) {
                     Ok(_) => {
                         eprintln!("[RAA] Wrote per-file archive report inside job folder: {:?}", target_path);
+                        let _ = window.emit(
+                            "scan-event",
+                            ScanEvent {
+                                path: target_path.to_string_lossy().into(),
+                                status: "PerFileReport".into(),
+                                verdict: Some(report.verdict.clone()),
+                                reason: None,
+                            },
+                        );
                     }
                     Err(e) => {
                         eprintln!("[RAA] WARNING: Failed to write per-file archive report {:?}: {}", target_path, e);
@@ -939,6 +956,15 @@ async fn scan_compressed_archive(
         eprintln!("[RAA] WARNING: Failed to finalize ~RAA-CONTROL-Manifest.log for archive: {}", e);
     } else {
         eprintln!("[RAA] Finalized ~RAA-CONTROL-Manifest.log for archive (with DNA) at: {:?}", manifest_path);
+        let _ = window.emit(
+            "scan-event",
+            ScanEvent {
+                path: manifest_path.to_string_lossy().into(),
+                status: "ControlManifest".into(),
+                verdict: None,
+                reason: None,
+            },
+        );
     }
 
     // Write the aggregated report inside the job folder (instead of root vault via legacy log_to_raa).
@@ -1015,6 +1041,8 @@ async fn generate_manifest(
             ScanEvent {
                 path: full_path.to_string_lossy().into(),
                 status: "Skipped".into(),
+                verdict: None,
+                reason: Some("filtered by rules".to_string()),
             },
         );
     }
@@ -1046,6 +1074,8 @@ async fn generate_manifest(
                 ScanEvent {
                     path: manifest_path.to_string_lossy().into(),
                     status: "ControlManifest".into(),
+                    verdict: None,
+                    reason: None,
                 },
             );
         }
@@ -1076,6 +1106,8 @@ async fn generate_manifest(
                 ScanEvent {
                     path: path.to_string_lossy().into(),
                     status: "Active".into(),
+                    verdict: None,
+                    reason: None,
                 },
             );
             target_files.push((path, ext));
@@ -1162,7 +1194,7 @@ async fn generate_manifest(
     if !current_bucket.is_empty() {
         buckets.push(current_bucket);
     }
-    let mut ledger_entries = String::new();
+    let mut report_entries = String::new();
     let mut any_violations = false;
 
     for bucket in buckets {
@@ -1322,7 +1354,7 @@ async fn generate_manifest(
                 verdict,
                 analysis_text
             );
-            ledger_entries.push_str(&analysis_block);
+            report_entries.push_str(&analysis_block);
 
             // Write individual per-file report inside the job folder, preserving source hierarchy.
             // This enables proper DNA tracking per file in the new job folder model.
@@ -1337,6 +1369,15 @@ async fn generate_manifest(
             match fs::write(&target_path, &analysis_block) {
                 Ok(_) => {
                     eprintln!("[RAA] Wrote per-file audited report: {:?}", target_path);
+                    let _ = window.emit(
+                        "scan-event",
+                        ScanEvent {
+                            path: target_path.to_string_lossy().into(),
+                            status: "PerFileReport".into(),
+                            verdict: Some(verdict.clone()),
+                            reason: None,
+                        },
+                    );
                 }
                 Err(e) => {
                     eprintln!("[RAA] WARNING: Failed to write per-file audited report {:?}: {}", target_path, e);
@@ -1362,7 +1403,7 @@ async fn generate_manifest(
         if any_violations { "YES" } else { "NO" }
     );
 
-    let full_ledger = format!("{}{}", overall_header, ledger_entries);
+    let full_report = format!("{}{}", overall_header, report_entries);
 
     // Write the report inside the job folder we created at the start of this function.
     // This makes the control manifest + the main report live together.
@@ -1370,7 +1411,7 @@ async fn generate_manifest(
     // inside the job folder (e.g. job-folder/src/utils/foo.rs.raa).
     let report_filename = format!("certify-report-{}.raa", timestamp);
     let report_path = job_folder.join(report_filename);
-    match fs::write(&report_path, &full_ledger) {
+    match fs::write(&report_path, &full_report) {
         Ok(_) => {
             eprintln!("[RAA] Wrote certify report to: {:?}", report_path);
         }
@@ -1412,6 +1453,15 @@ async fn generate_manifest(
         match fs::write(&target_path, &skipped_report) {
             Ok(_) => {
                 eprintln!("[RAA] Wrote skipped report: {:?}", target_path);
+                let _ = window.emit(
+                    "scan-event",
+                    ScanEvent {
+                        path: target_path.to_string_lossy().into(),
+                        status: "SkippedReport".into(),
+                        verdict: None,
+                        reason: Some("extension filter".to_string()),
+                    },
+                );
             }
             Err(e) => {
                 eprintln!("[RAA] WARNING: Failed to write skipped report {:?}: {}", target_path, e);
@@ -1439,6 +1489,17 @@ async fn generate_manifest(
     match fs::write(&manifest_path, &final_manifest) {
         Ok(_) => {
             eprintln!("[RAA] Finalized control manifest with DNA registry at: {:?}", manifest_path);
+            let _ = window.emit(
+                "scan-event",
+                ScanEvent {
+                    path: manifest_path.to_string_lossy().into(),
+                    status: "ControlManifest".into(),
+                    verdict: None,
+                    reason: None,
+                },
+            );
+            // Do not re-emit; initial emit already announced creation to the live feed.
+            // Final step just adds the DNA Registry section.
         }
         Err(e) => {
             eprintln!("[RAA] WARNING: Failed to write final control manifest {:?}: {}", manifest_path, e);
@@ -1447,7 +1508,7 @@ async fn generate_manifest(
 
     Ok(RAAReport {
         verdict: overall_verdict,
-        reasoning: full_ledger,
+        reasoning: full_report,
         target_name: folder_path,
         is_error: any_violations,
     })
@@ -1455,7 +1516,7 @@ async fn generate_manifest(
 
 // --- RAA LEDGER BROWSER ---
 #[tauri::command]
-async fn read_ledger(vault_root_path: String) -> Result<String, String> {
+async fn read_vault(vault_root_path: String) -> Result<String, String> {
     let audit_root = resolve_vault_root(&vault_root_path);
     
     let mut all_logs = String::new();
@@ -1513,7 +1574,7 @@ async fn get_default_vault_path() -> Result<String, String> {
 // --- LEDGER BROWSER COMMANDS ---
 
 /// Recursively collects .raa files from a directory (supports job folders inside operation roots).
-fn collect_raa_files(dir: &Path, files: &mut Vec<LedgerFile>) {
+fn collect_raa_files(dir: &Path, files: &mut Vec<VaultFile>) {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -1535,7 +1596,7 @@ fn collect_raa_files(dir: &Path, files: &mut Vec<LedgerFile>) {
                 let content = fs::read_to_string(&path).unwrap_or_default();
                 let has_violation = content.to_uppercase().contains("VIOLATION");
 
-                files.push(LedgerFile {
+                files.push(VaultFile {
                     name: path.file_name().unwrap_or_default().to_string_lossy().into(),
                     path: path.to_string_lossy().into(),
                     modified,
@@ -1548,9 +1609,9 @@ fn collect_raa_files(dir: &Path, files: &mut Vec<LedgerFile>) {
 }
 
 #[tauri::command]
-async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, String> {
+async fn list_vault_files(vault_root_path: String) -> Result<Vec<VaultFile>, String> {
     // ============================================================
-    // Ledger discovery now scans the operation roots (Audit/Analyze/Archive/Certify)
+    // Vault discovery now scans the operation roots (Audit/Analyze/Archive/Certify)
     // and recurses to find .raa files (including those inside dated job folders).
     // Full UI navigation of job folders as containers is still tabled per earlier notes.
     // See RAA-NEWPATH-FORWARD.txt → Stage 5.
@@ -1561,7 +1622,7 @@ async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, S
         return Ok(vec![]);
     }
 
-    let mut files: Vec<LedgerFile> = Vec::new();
+    let mut files: Vec<VaultFile> = Vec::new();
 
     // Collect from main vault root (for backward compatibility with any old flat files)
     collect_raa_files(&audit_root, &mut files);
@@ -1581,13 +1642,13 @@ async fn list_ledger_files(vault_root_path: String) -> Result<Vec<LedgerFile>, S
 }
 
 #[tauri::command]
-async fn read_single_ledger_file(full_path: String) -> Result<String, String> {
+async fn read_single_vault_file(full_path: String) -> Result<String, String> {
     fs::read_to_string(&full_path).map_err(|e| e.to_string())
 }
 
-/// Safely deletes a .raa ledger file. Only allows deletion inside the current vault root.
+/// Safely deletes a .raa vault file. Only allows deletion inside the current vault root.
 #[tauri::command]
-async fn delete_ledger_file(full_path: String, vault_root_path: String) -> Result<(), String> {
+async fn delete_vault_file(full_path: String, vault_root_path: String) -> Result<(), String> {
     let audit_root = resolve_vault_root(&vault_root_path);
     let target_path = std::path::PathBuf::from(&full_path);
 
@@ -1671,14 +1732,14 @@ pub fn run() {
             generate_manifest,
             scan_file_integrity,
             scan_compressed_archive,
-            read_ledger,
+            read_vault,
             check_integrity,
             toggle_watcher,
             create_vault_directory,
             get_default_vault_path,
-            list_ledger_files,
-            read_single_ledger_file,
-            delete_ledger_file,
+            list_vault_files,
+            read_single_vault_file,
+            delete_vault_file,
             hash_file
         ])
         .run(tauri::generate_context!())

@@ -8,8 +8,8 @@
 ## ⚓ PERMANENT ANCHORS (DO NOT ALTER)
 
 - **API Endpoint:** Uses dynamic Base URL (user-configurable). No hard-coded `x.ai`.
-- **Path Protocol:** Always use `fs::canonicalize` for absolute path matching in ledgers.
-- **Ledger Pathing:** Respects user-selected `vaultRootPath` (falls back to `~/Documents/RAA-Vault`).
+- **Path Protocol:** Always use `fs::canonicalize` for absolute path matching in vault entries.
+- **Vault Pathing:** Respects user-selected `vaultRootPath` (falls back to `~/Documents/RAA-Vault`).
 - **Read-Only Mandate:** The Gatekeeper never modifies user files.
 - **Advisory Only:** All verdicts are diagnostic. Human remains the decision maker.
 
@@ -37,7 +37,7 @@
 - [x] **Silent Watcher** — Kernel-level file monitoring with DNA change alerts
 - [x] **DNA Toast + Forensic Queue** — "Teleport to Analyze" from watcher events
 - [x] **Configurable Watcher** — Up to 5 folders, depth control (1-5), persisted
-- [x] **Ledger Tab** — Basic access to historical `.raa` files
+- [x] **Vault Tab** — Basic access to historical `.raa` files
 - [x] **Integrity Guard** — 7/7 self-check dashboard (parallel hashing, disk-first, etc.)
 - [x] **User-Selectable Vault** — Full `vaultRootPath` propagation to all audit types
 - [x] **Real-time Timers** — Handoff + total oracle timing on every operation
@@ -45,8 +45,8 @@
 
 ### Currently In Progress / Next
 
-- [ ] **Rich Ledger Browser** — Proper file list, searchable, parsed incident cards, per-file DNA verification
-- [ ] **DNA Verification UI** — "Does current hash match last ledger entry?" indicator
+- [ ] **Rich Vault Browser** — Proper file list, searchable, parsed incident cards, per-file DNA verification
+- [ ] **DNA Verification UI** — "Does current hash match last vault entry?" indicator
 - [ ] **Export Reports** — Clean Markdown export of any audit or full manifest
 - [ ] **Violation History Dashboard** ("Wall of Shame")
 - [ ] **Token Economy Counter** — Live batch density + estimated savings
@@ -85,14 +85,14 @@
 
 ---
 
-## 🚀 New Path Forward: Granular Per-File Forensic Ledgers + Job Folders (Initiated 2025)
+## 🚀 New Path Forward: Granular Per-File Forensic Vaults + Job Folders (Initiated 2025)
 
 **Core Philosophy**  
 "Trust, then Certify." — taken to its logical conclusion: every individual file audited deserves its own first-class, self-contained forensic artifact.
 
 **Major Architectural Shift**
 - Move from "one large .raa file per job" (with many internal blocks) to **ONE FILE = ONE REPORT**.
-- Every file that receives AI analysis (whether from a Certify folder run or from inside an Archive) produces its own dedicated `.raa` ledger containing:
+- Every file that receives AI analysis (whether from a Certify folder run or from inside an Archive) produces its own dedicated `.raa` vault entry containing:
   - Full oracle analysis paragraph
   - Clear verdict
   - Its own DNA (SHA-256) hash
@@ -135,7 +135,7 @@
 - Bottom bar continues to show the comma-separated skipped list (preserving all existing skipped logic).
 
 #### Stage 3: Per-File .raa Writing Inside Job Folders (with Hierarchy Mirroring)
-- Modify Certify (`generate_manifest`) and Archive (`scan_compressed_archive`) flows to emit individual `.raa` files instead of one aggregated job ledger.
+- Modify Certify (`generate_manifest`) and Archive (`scan_compressed_archive`) flows to emit individual `.raa` files instead of one aggregated job report.
 - Write each per-file report directly into the job folder created in Stage 1.
 - When possible, mirror the original source folder hierarchy inside the job folder (provides natural duplicate-name protection and familiar structure for after-action review).
 - Update `log_to_raa` (or introduce a job-aware writer) to support directory creation and relative path mirroring.
@@ -147,15 +147,15 @@
 - Internal ZIP hierarchy can be mirrored inside the job folder when beneficial.
 - Retain necessary special handling for DNA verification of container-origin files (📦 states, etc.) while the rest of the system moves to per-file granularity.
 
-#### Stage 5: Ledger Browser Evolution for Job Folders
-- Update `list_ledger_files` and the Svelte ledger UI to understand and present job folders as first-class containers.
+#### Stage 5: Vault Browser Evolution for Job Folders
+- Update `list_vault_files` and the Svelte vault UI to understand and present job folders as first-class containers.
 - Users can browse by job, then drill into individual per-file reports.
 - The `~RAA-CONTROL-Manifest` should be prominently surfaced when a job folder is selected.
 
-**Status:** Explicitly tabled for now. The ledger browser remains flat (vault root only) until the `~RAA-CONTROL-Manifest.log` visual design and report writing inside job folders are stable and satisfactory to the user. See the detailed TODO in `src-tauri/src/lib.rs` (list_ledger_files) and RAA-NEWPATH-FORWARD.txt.
+**Status:** Explicitly tabled for now. The vault browser remains flat (vault root only) until the `~RAA-CONTROL-Manifest.log` visual design and report writing inside job folders are stable and satisfactory to the user. See the detailed TODO in `src-tauri/src/lib.rs` (list_vault_files) and RAA-NEWPATH-FORWARD.txt.
 
 #### Stage 6+: Future Evolutions (Parked for Later)
-- Right pane becomes optionally clickable / shows live ledger content ("YET").
+- Right pane becomes optionally clickable / shows live vault content ("YET").
 - Move skipped-files display + reasons (failed, extension filter, junk, etc.) into the right pane dynamically.
 - New dedicated "Reports" section capable of generating human-readable summaries (Markdown, and eventually PDF) across an entire job folder using the control manifest + individual .raa files as source material.
 - Any additional polish around vault visualization, job-level metadata, export, etc.

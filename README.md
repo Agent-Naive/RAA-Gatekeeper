@@ -68,14 +68,14 @@ npm run tauri build
 ## ⚓ The RAA Mandate
 1.  **READ-ONLY:** The Gatekeeper **never** modifies user files.
 2.  **ADVISORY ONLY:** The app provides forensic diagnostics; the human pilot remains the decision-maker.
-3.  **AUDITABLE:** Every interaction is recorded in a `.raa` forensic ledger.
+3.  **AUDITABLE:** Every interaction is recorded in a `.raa` forensic vault entry.
 
 ---
 
 ## 📂 Project Structure
 *   `src/` - SvelteKit frontend routes and components.
 *   `src-tauri/` - Rust backend, commands (`lib.rs`), and configuration.
-*   `raa-test/` - Isolated directory for generated forensic ledgers.
+*   `raa-test/` - Isolated directory for generated forensic vault entries.
 
 ---
 

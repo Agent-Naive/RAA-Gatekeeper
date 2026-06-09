@@ -171,6 +171,10 @@
   border-radius: 8px;
 }
 
+.glass-vault.viewed-from-feed {
+  border-color: #396cd8;
+}
+
 .vault-header {
   padding: 20px;
   background: #000;
@@ -643,8 +647,8 @@
   border-color: #ef4444;
 }
 
-/* Ledger Styles (global because used in multiple places) */
-.ledger-row {
+/* Vault Styles (global because used in multiple places) */
+.vault-row {
   width: 100%;
   text-align: left;
   background: transparent;
@@ -655,16 +659,16 @@
   transition: background 0.1s;
 }
 
-.ledger-row:hover {
+.vault-row:hover {
   background: #1a1a1a;
 }
 
-.ledger-row.selected {
+.vault-row.selected {
   background: #222;
   border-left: 3px solid var(--primary);
 }
 
-.ledger-incident-card {
+.vault-incident-card {
   background: #1a1a1a;
   border: 1px solid #222;
   border-radius: 4px;
@@ -672,15 +676,15 @@
   margin-bottom: 10px;
 }
 
-/* Additional Ledger panel utilities */
-.ledger-panel {
+/* Additional Vault panel utilities */
+.vault-panel {
   border: 1px solid #222;
   border-radius: 6px;
   background: #111;
   overflow: hidden;
 }
 
-.ledger-search-input {
+.vault-search-input {
   background: #222;
   border: 1px solid #333;
   color: #ddd;
@@ -691,14 +695,14 @@
   max-width: calc(100% - 4px); /* prevents edge clipping against panel border */
 }
 
-.ledger-header {
+.vault-header {
   padding: 6px 8px;
   border-bottom: 1px solid #222;
   background: #1a1a1a;
   box-sizing: border-box;
 }
 
-.ledger-detail {
+.vault-detail {
   padding: 12px;
   min-height: 420px;
   overflow-y: auto;
@@ -708,28 +712,28 @@
   max-width: 620px;
 }
 
-.ledger-empty {
+.vault-empty {
   padding: 20px;
   color: #666;
   text-align: center;
   font-style: italic;
 }
 
-.ledger-meta {
+.vault-meta {
   padding-bottom: 8px;
   border-bottom: 1px solid #222;
   font-size: 11px;
   color: #888;
 }
 
-.ledger-item-header {
+.vault-item-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
 
-.ledger-item-name {
+.vault-item-name {
   flex: 1;
   min-width: 0; /* critical for text-ellipsis inside flex */
   text-align: left;
@@ -738,14 +742,14 @@
   color: #ddd;
 }
 
-.ledger-item-date {
+.vault-item-date {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 10px;
   color: #666;
   margin-top: 3px;
-  padding-right: 8px; /* match the right padding of .ledger-header and the filter input box for visual alignment */
+  padding-right: 8px; /* match the right padding of .vault-header and the filter input box for visual alignment */
 }
 
 /* Dual Pane Monitor (used in Archive and Certify tabs) */
@@ -773,6 +777,35 @@
   color: #555;
   text-transform: uppercase;
   margin-bottom: 10px;
+  /* extra space after emoji to help align the text "Just Done" with list items below */
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.button-row .primary-btn {
+  grid-column: 1;
+}
+
+.feed-key {
+  /* Apply exact properties from .pane h4 for visual match (size, color, bold, uppercase) */
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  font-weight: bold;   /* matches heading bold */
+  /* margin-bottom: 10px;  -- omitted to avoid pushing the dual-pane-monitor down */
+
+  /* Layout properties to keep it centered over the right pane (in the button-row grid) */
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .scroll-list {
@@ -791,7 +824,7 @@
   -webkit-user-select: text;
 }
 
-.ledger-item-name {
+.vault-item-name {
   color: #ddd;
   min-width: 0;
 }
@@ -803,11 +836,16 @@
   padding: 0 15px;
 }
 
+.timing-value {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .default-vault-label {
   color: #4ade80;
 }
 
-.ledger-panel-fixed {
+.vault-panel-fixed {
   flex: 0 0 300px;
   overflow-x: hidden;
 }
@@ -821,15 +859,15 @@
 }
 
 /* Final small helpers for remaining inline cases */
-.ledger-header-title {
+.vault-header-title {
   margin: 0;
 }
 
-.ledger-count {
+.vault-count {
   margin: 4px 0 0;
 }
 
-.ledger-list-container {
+.vault-list-container {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -927,8 +965,8 @@
   padding: 2px 5px;
 }
 
-/* === Ledger Delete Button === */
-.ledger-delete-btn {
+/* === Vault Delete Button === */
+.vault-delete-btn {
   background: transparent;
   border: none;
   color: #666;
@@ -942,11 +980,11 @@
   line-height: 1;
 }
 
-.ledger-row:hover .ledger-delete-btn {
+.vault-row:hover .vault-delete-btn {
   opacity: 1;
 }
 
-.ledger-delete-btn:hover {
+.vault-delete-btn:hover {
   color: #f87171;
   background: rgba(248, 113, 113, 0.1);
   opacity: 1;
@@ -1069,24 +1107,6 @@
   margin-left: 12px;
 }
 
-/* =====================================================
-   TEMPORARY SKIPPED FILES BOTTOM BAR + COMING SOON PANE
-   (Holding pattern only — see +page.svelte comment block
-    above skippedFiles declaration for full rationale.)
-
-   User request (verbatim intent):
-   - Two boxes side-by-side kept for visual continuity.
-   - Left: LIVE / Audited (unchanged).
-   - Right: "Coming Soon" placeholder.
-   - Full-width bar BELOW containing skipped files as one
-     comma-separated row.
-
-   ALL original skipped logic, state, listeners, reset,
-   and scroll refs are preserved byte-for-byte elsewhere.
-   This CSS + the new .skipped-bottom-bar markup in the
-   two tabs can be removed or relocated cleanly in Step 2/3.
-   ===================================================== */
-
 .coming-soon-placeholder {
   display: flex;
   align-items: center;
@@ -1098,41 +1118,51 @@
   text-align: center;
 }
 
-.skipped-bottom-bar {
-  margin-top: 12px;
-  background: #161616;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+.feed-entry {
   font-family: monospace;
   font-size: 11px;
-  color: #888;
+  padding: 4px 0;
   white-space: nowrap;
-  overflow-x: auto;
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-
-  /* Allow text selection so users can copy the skipped list for debugging */
-  user-select: text;
-  -webkit-user-select: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  /* left alignment now matches .file-entry and the left pane */
+  /* color is set by .manifest / .certified / .violation / .skipped */
 }
 
-/* Target the actual content area for selection */
-.skipped-bottom-bar > span:not(.skipped-label) {
-  user-select: text;
-  -webkit-user-select: text;
+.feed-entry:hover {
+  background-color: #222;
+  text-decoration: underline;
 }
 
-.skipped-bottom-bar .skipped-label {
-  color: #555;
-  text-transform: uppercase;
+.feed-entry.skipped {
+  color: #ffab00;
+  opacity: 0.85;
+}
+
+.small-btn {
   font-size: 10px;
-  flex-shrink: 0;
-  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  background: #222;
+  color: #888;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.skipped-bottom-bar .muted {
-  color: #555;
+.small-btn:hover {
+  background: #333;
+  color: #ddd;
+}
+
+.feed-entry.manifest {
+  color: #396cd8;
+}
+
+.feed-entry.certified {
+  color: #10b981;
+}
+
+.feed-entry.violation {
+  color: #ef4444;
 }

@@ -203,14 +203,14 @@
   let certMsg = $state("");
   let lastCertifySuccess = $state(true);
   let commandInput = $state("");
-  let ledgerContent = $state(""); // legacy raw view (kept for now)
-  let ledgerFiles = $state<any[]>([]);
-  let selectedLedgerPath = $state("");
-  let selectedLedgerContent = $state("");
+  let vaultContent = $state(""); // legacy raw view (kept for now)
+  let vaultFiles = $state<any[]>([]);
+  let selectedVaultPath = $state("");
+  let selectedVaultContent = $state("");
   let recordedHashes = $state<RecordedHash[]>([]);
 
-  let ledgerSearch = $state("");
-  let isLoadingLedger = $state(false);
+  let vaultSearch = $state("");
+  let isLoadingVault = $state(false);
   let integrityReport = $state<any>(null);
 
   // Delete confirmation state
@@ -220,45 +220,12 @@
   let allowedExts = $state([".md", ".js", ".yml", ".zip", ".env", ".txt"]);
   let activeFiles = $state<string[]>([]);
 
-  // =============================================
-  // TEMPORARY SKIPPED FILES UI HOLDING PATTERN
-  //
-  // User directive (2025-10 context):
-  // "trust me moving this to the bottom is purely temporary
-  // and a way to save the current file skipped code intact
-  // for a move later. once we make these changes i will
-  // explain step 2 and then step 3"
-  //
-  // Exact requested layout for Certify (LIVE/SKIPPED boxes):
-  // - Keep two side-by-side framed boxes (visual format preserved)
-  // - Left pane: "📡 Audited" (both Archive and Certify tabs) — unchanged,
-  //   still populates files being scanned/audited.
-  // - Right pane: simple "Coming Soon" placeholder (no skipped content).
-  // - BELOW the two panes: NEW full-width bar spanning the app.
-  //   Inside: skipped files rendered as SINGLE ROW, comma-separated.
-  //
-  // CRITICAL PRESERVATION RULE (strict):
-  // EVERY line of skipped file logic remains 100% INTACT and
-  // untouched in this commit:
-  //   • let skippedFiles = $state<string[]>([])
-  //   • let skippedScrollContainer
-  //   • onMount listener: if not Active → push to skippedFiles,
-  //     scrollToBottom(skippedScrollContainer)
-  //   • resetResults(): skippedFiles = []
-  //   • scrollToBottom helper (shared)
-  //   • All references and the entire collection pipeline
-  //
-  // This is PURELY a rendering relocation. No logic was deleted,
-  // commented out, or refactored. The data continues to flow
-  // exactly as before so it is ready for the user's Step 2 + Step 3.
-  //
-  // The old per-pane skipped rendering (#each over skippedFiles
-  // inside .pane) has been removed from the right box only.
-  // All other skipped-related code is byte-for-byte preserved.
-  // =============================================
-  let skippedFiles = $state<string[]>([]);
   let activeScrollContainer: HTMLElement | undefined = $state();
-  let skippedScrollContainer: HTMLElement | undefined = $state();
+  let rightScrollContainer: HTMLElement | undefined = $state();
+
+  // Stage 2: Live "What I Just Did" comfort feed (right pane)
+  let liveFeed = $state<{ text: string; skipped?: boolean; fullPath?: string }[]>([]);
+  let viewedFromFeed = $state<null | { text: string; content: string; isSkipped?: boolean }>(null);
 
   async function scrollToBottom(el: HTMLElement | undefined) {
     if (el) {
@@ -272,13 +239,38 @@
     let unlisten: any;
     async function setupListener() {
       unlisten = await listen("scan-event", (event: any) => {
-        const { path, status } = event.payload;
+        const { path, status, verdict, reason } = event.payload;
         if (status === "Active") {
           activeFiles = [...activeFiles, path];
           scrollToBottom(activeScrollContainer);
-        } else {
-          skippedFiles = [...skippedFiles, path];
-          scrollToBottom(skippedScrollContainer);
+        } else if (status === "ControlManifest" || status === "PerFileReport" || status === "Report") {
+          // Stage 2: live "Just Done" feed - audited reports + manifests
+          let text;
+          if (status === "ControlManifest") {
+            text = `📋 ${path.split('/').pop() || path}`;
+          } else {
+            const shortVerdict = verdict ? verdict.replace("RAA VIOLATION DETECTED", "VIOLATION FOUND").replace("ALL SAFE", "CERTIFIED") : "";
+            text = `📝 ${path.split('/').pop() || path} (${shortVerdict})`;
+          }
+          // Update manifest in place if final version arrives (to avoid duplicate line)
+          if (status === "ControlManifest") {
+            const existingIndex = liveFeed.findIndex(i => i.fullPath === path);
+            if (existingIndex !== -1) {
+              liveFeed[existingIndex] = { ...liveFeed[existingIndex], text };
+              liveFeed = liveFeed; // trigger update
+              scrollToBottom(rightScrollContainer);
+              return;
+            }
+          }
+          liveFeed = [...liveFeed, { text, fullPath: path }];
+          scrollToBottom(rightScrollContainer);
+        } else if (status === "Skipped" || status === "SkippedReport") {
+          // Stage 2: show skipped in the right pane (grayed out, 🚫 icon)
+          // They appear when the early "Skipped" emit fires (before LLM work)
+          const reasonText = reason || "filtered";
+          const text = `🚫 ${path.split('/').pop() || path} (${reasonText})`;
+          liveFeed = [...liveFeed, { text, skipped: true, fullPath: path }];
+          scrollToBottom(rightScrollContainer);
         }
       });
     }
@@ -297,8 +289,25 @@
     };
     certMsg = "";
     lastCertifySuccess = true;
+    liveFeed = [];
     activeFiles = [];
-    skippedFiles = [];
+    viewedFromFeed = null;
+  }
+
+  async function viewFeedItem(item) {
+    if (!item.fullPath) return;
+    try {
+      const content = await invoke("read_single_vault_file", { fullPath: item.fullPath });
+      viewedFromFeed = {
+        text: item.text,
+        content: content,
+        isSkipped: item.skipped,
+      };
+      // Do not overwrite the main currentReport (the overall job result)
+      // This way the main report breakdown stays visible.
+    } catch (e) {
+      certMsg = `Error reading ${item.text}: ${e}`;
+    }
   }
 
   function getReportSegments(text: string) {
@@ -318,7 +327,7 @@
   // TEMPORARILY DISABLED: Report Colorization
   //
   // We have removed all calls to highlightSegment() from
-  // the actual report displays (Ledger detail pane and
+  // the actual report displays (Vault detail pane and
   // live Vault popup) so that reports render as plain
   // text only.
   //
@@ -646,48 +655,48 @@
     }
   }
 
-  async function loadLedgerData() {
-    isLoadingLedger = true;
+  async function loadVaultData() {
+    isLoadingVault = true;
     try {
       // Ensure the vault directory exists before listing (important for default vault case)
       await ensureVault();
 
-      ledgerFiles = await invoke("list_ledger_files", { vaultRootPath });
+      vaultFiles = await invoke("list_vault_files", { vaultRootPath });
       // NOTE: Current implementation is flat (only top-level .raa files in vault root).
       // Job folder navigation (RAA-Vault/JobName-.../) is tabled until ~RAA-CONTROL-Manifest.log is finalized.
-      // See TODO in Rust list_ledger_files and RAA-NEWPATH-FORWARD.txt.
+      // See TODO in Rust list_vault_files and RAA-NEWPATH-FORWARD.txt.
       // Clear selection when loading fresh data
-      selectedLedgerPath = "";
-      selectedLedgerContent = "";
+      selectedVaultPath = "";
+      selectedVaultContent = "";
       recordedHashes = [];
       copiedHash = null;
     } catch (e) {
-      ledgerFiles = [];
-      console.error("Failed to list ledger files:", e);
+      vaultFiles = [];
+      console.error("Failed to list vault files:", e);
     } finally {
-      isLoadingLedger = false;
+      isLoadingVault = false;
     }
   }
 
-  async function goToLedger() {
-    activeTab = "ledger";
-    await loadLedgerData();
+  async function goToVault() {
+    activeTab = "vault";
+    await loadVaultData();
   }
 
-  async function selectLedgerFile(filePath: string) {
-    selectedLedgerPath = filePath;
+  async function selectVaultFile(filePath: string) {
+    selectedVaultPath = filePath;
     try {
-      selectedLedgerContent = await invoke("read_single_ledger_file", { fullPath: filePath });
+      selectedVaultContent = await invoke("read_single_vault_file", { fullPath: filePath });
       copiedHash = null;
 
       // Detect origin so we can show honest icons for ZIP vs real disk files
-      const isArchiveLedger = /Type:\s*archive/i.test(selectedLedgerContent || "");
+      const isArchiveVault = /Type:\s*archive/i.test(selectedVaultContent || "");
 
       // Populate recorded hashes for DNA verification
-      recordedHashes = extractRecordedHashes(selectedLedgerContent).map(h => ({
+      recordedHashes = extractRecordedHashes(selectedVaultContent).map(h => ({
         ...h,
         status: undefined,
-        fromArchive: isArchiveLedger,
+        fromArchive: isArchiveVault,
       }));
 
       // Slice 4: Auto-verify if we have hashes that haven't been verified yet
@@ -696,38 +705,38 @@
         verifyRecordedHashes();
       }
     } catch (e) {
-      selectedLedgerContent = `Error loading file: ${e}`;
+      selectedVaultContent = `Error loading file: ${e}`;
       recordedHashes = [];
       copiedHash = null;
     }
   }
 
-  // --- Delete Ledger File with Confirmation ---
-  function requestDeleteLedger(file: any) {
+  // --- Delete Vault File with Confirmation ---
+  function requestDeleteVaultFile(file: any) {
     // Prevent the row click from also selecting the file
     deleteConfirmPath = file.path;
     deleteConfirmName = file.name;
   }
 
-  async function confirmDeleteLedger() {
+  async function confirmDeleteVaultFile() {
     if (!deleteConfirmPath) return;
 
     const pathToDelete = deleteConfirmPath;
-    const wasSelected = selectedLedgerPath === pathToDelete;
+    const wasSelected = selectedVaultPath === pathToDelete;
 
     try {
-      await invoke("delete_ledger_file", {
+      await invoke("delete_vault_file", {
         fullPath: pathToDelete,
         vaultRootPath,
       });
 
       // Refresh the list
-      await loadLedgerData();
+      await loadVaultData();
 
       // If the deleted file was currently selected, clear the detail view
       if (wasSelected) {
-        selectedLedgerPath = "";
-        selectedLedgerContent = "";
+        selectedVaultPath = "";
+        selectedVaultContent = "";
         recordedHashes = [];
       }
     } catch (e) {
@@ -739,15 +748,15 @@
     }
   }
 
-  function cancelDeleteLedger() {
+  function cancelDeleteVaultFile() {
     deleteConfirmPath = null;
     deleteConfirmName = null;
   }
 
-  function filteredLedgerFiles() {
-    if (!ledgerSearch.trim()) return ledgerFiles;
-    const q = ledgerSearch.toLowerCase();
-    return ledgerFiles.filter((f) => f.name.toLowerCase().includes(q));
+  function filteredVaultFiles() {
+    if (!vaultSearch.trim()) return vaultFiles;
+    const q = vaultSearch.toLowerCase();
+    return vaultFiles.filter((f) => f.name.toLowerCase().includes(q));
   }
 
   async function runIntegrityCheck() {
@@ -832,8 +841,8 @@
         resetResults();
       }}>🔏 Certify</button
     >
-    <button class:active={activeTab === "ledger"} onclick={goToLedger}
-      >📜 Ledger</button
+    <button class:active={activeTab === "vault"} onclick={goToVault}
+      >📜 Vault</button
     >
     <button
       class:active={activeTab === "settings"}
@@ -848,7 +857,7 @@
     {/if}
     
     <div class="timing-metrics flex items-center text-12">
-      <span>LOCAL: {handoffTime}ms | ORACLE: {(totalTime / 1000).toFixed(2)}s</span>
+      <span>LOCAL: <span class="timing-value">{handoffTime}ms</span> | ORACLE: <span class="timing-value">{(totalTime / 1000).toFixed(2)}s</span></span>
     </div>
 
     <button
@@ -938,36 +947,47 @@
           <p class="subtitle" title="Secure AI-driven check of file contents without unpacking.">
             Audit zip contents without extraction to detect hidden payloads or obscured threats.
           </p>
-          <button
-            class="primary-btn"
-            onclick={handleBrowseArchive}
-            disabled={isProcessing}>Select ZIP Archive</button
-          >
+          <div class="button-row">
+            <button
+              class="primary-btn"
+              onclick={handleBrowseArchive}
+              disabled={isProcessing}>Select ZIP Archive</button
+            >
+            <div class="feed-key">
+              KEY:&nbsp;&nbsp; 📋-Control Manifest&nbsp;&nbsp; 🚫-Skipped&nbsp;&nbsp; 📝-Decision.raa
+            </div>
+          </div>
           <div class="dual-pane-monitor">
             <div class="pane">
-              <h4>📡 Audited</h4>
+              <h4>📡&nbsp;&nbsp; Auditing</h4>
               <div class="scroll-list" bind:this={activeScrollContainer}>
                 {#each activeFiles as f}<div class="file-entry">{f}</div>{/each}
               </div>
             </div>
             <div class="pane">
-              <!-- TEMPORARY PLACEHOLDER (right pane preserved for layout) -->
-              <h4>Coming Soon</h4>
-              <div class="coming-soon-placeholder">Future feature area</div>
+              <!-- Stage 2: Real-time "What I Just Did" comfort feed (live as reports & manifests are written) -->
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <h4>✅&nbsp;&nbsp; Just Done</h4>
+                {#if liveFeed.length > 0}
+                  <button class="small-btn" onclick={() => { liveFeed = []; viewedFromFeed = null; activeFiles = []; }}>clear feed</button>
+                {/if}
+              </div>
+              <div class="scroll-list" bind:this={rightScrollContainer}>
+                {#each liveFeed as item}
+                  <div class="feed-entry" 
+                       class:skipped={item.skipped}
+                       class:manifest={item.text.includes('📋')}
+                       class:certified={item.text.includes('(CERTIFIED)')}
+                       class:violation={item.text.includes('(VIOLATION')}
+                       onclick={() => viewFeedItem(item)}>
+                    {item.text}
+                  </div>
+                {/each}
+              </div>
             </div>
           </div>
 
-          <!-- TEMPORARY FULL-WIDTH SKIPPED BAR (single-row, comma-separated)
-               All skippedFiles collection/processing logic is untouched above.
-               This bar exists only as a holding pattern per user request. -->
-          <div class="skipped-bottom-bar">
-            <span class="skipped-label">🚫 SKIPPED</span>
-            {#if skippedFiles.length > 0}
-              <span>{skippedFiles.map((f) => f.split('/').pop() || f).join(', ')}</span>
-            {:else}
-              <span class="muted">—</span>
-            {/if}
-          </div>
+
         </section>
       {:else if activeTab === "certify"}
         <section class="tool-view">
@@ -975,14 +995,19 @@
           <p class="subtitle" title="Generate a cryptographic audit manifest for all files within a project directory.">
             Use the RAA Gatekeeper to Certify a large Repository of files.
           </p>
-          <button
-            class="primary-btn"
-            onclick={handleCertifyFolder}
-            disabled={isProcessing}>Start Certification</button
-          >
+          <div class="button-row">
+            <button
+              class="primary-btn"
+              onclick={handleCertifyFolder}
+              disabled={isProcessing}>Start Certification</button
+            >
+            <div class="feed-key">
+              KEY:&nbsp;&nbsp; 📋-Control Manifest&nbsp;&nbsp; 🚫-Skipped&nbsp;&nbsp; 📝-Decision.raa
+            </div>
+          </div>
           <div class="dual-pane-monitor">
             <div class="pane">
-              <h4>📡 Audited</h4>
+              <h4>📡&nbsp;&nbsp; Auditing</h4>
               <div class="scroll-list" bind:this={activeScrollContainer}>
                 {#each activeFiles as f}<div class="file-entry">
                     {f.split("/").pop()}
@@ -990,32 +1015,29 @@
               </div>
             </div>
             <div class="pane">
-              <!-- TEMPORARY PLACEHOLDER (right pane preserved for layout) -->
-              <h4>Coming Soon</h4>
-              <div class="coming-soon-placeholder">Future feature area</div>
+              <!-- Stage 2: Real-time "What I Just Did" comfort feed (live as reports & manifests are written) -->
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                <h4>✅&nbsp;&nbsp; Just Done</h4>
+                {#if liveFeed.length > 0}
+                  <button class="small-btn" onclick={() => { liveFeed = []; viewedFromFeed = null; activeFiles = []; }}>clear feed</button>
+                {/if}
+              </div>
+              <div class="scroll-list" bind:this={rightScrollContainer}>
+                {#each liveFeed as item}
+                  <div class="feed-entry" 
+                       class:skipped={item.skipped}
+                       class:manifest={item.text.includes('📋')}
+                       class:certified={item.text.includes('(CERTIFIED)')}
+                       class:violation={item.text.includes('(VIOLATION')}
+                       onclick={() => viewFeedItem(item)}>
+                    {item.text}
+                  </div>
+                {/each}
+              </div>
             </div>
           </div>
 
-          <!-- TEMPORARY FULL-WIDTH SKIPPED BAR (single-row, comma-separated)
-               All skippedFiles collection/processing logic is untouched above.
-               This bar exists only as a holding pattern per user request. -->
-          <div class="skipped-bottom-bar">
-            <span class="skipped-label">🚫 SKIPPED</span>
-            {#if skippedFiles.length > 0}
-              <span>{skippedFiles.map((f) => f.split('/').pop() || f).join(', ')}</span>
-            {:else}
-              <span class="muted">—</span>
-            {/if}
 
-            <!-- 
-              DEBUG HELPER (commented out for now)
-              Uncomment the block below when you need to inspect the raw skippedFiles array again.
-              <details style="margin-left: 12px; font-size: 10px;">
-                <summary>Debug raw ({skippedFiles.length})</summary>
-                <pre style="max-height: 120px; overflow: auto; background: #111; padding: 4px; margin: 4px 0 0 0; font-size: 9px;">{JSON.stringify(skippedFiles, null, 2)}</pre>
-              </details>
-            -->
-          </div>
         </section>
       {:else if activeTab === "integrity"}
         <section class="tool-view">
@@ -1198,40 +1220,40 @@
             </div>
           </div>
         </section>
-        {:else if activeTab === "ledger"}
+        {:else if activeTab === "vault"}
         <section class="tool-view">
           <div class="mb-8">
-            <h2 class="ledger-header-title">📜 Forensic Ledger</h2>
-            <p class="subtitle ledger-count">{ledgerFiles.length} reports in vault</p>
+            <h2 class="vault-header-title">📜 Forensic Vault</h2>
+            <p class="subtitle vault-count">{vaultFiles.length} reports in vault</p>
           </div>
 
           <div class="flex gap-8 mt-10">
             <!-- File List -->
-            <div class="ledger-panel ledger-panel-fixed">
-              <div class="ledger-header">
+            <div class="vault-panel vault-panel-fixed">
+              <div class="vault-header">
                 <input
                   type="text"
                   placeholder="Filter reports..."
-                  bind:value={ledgerSearch}
-                  class="w-full text-12 ledger-search-input"
+                  bind:value={vaultSearch}
+                  class="w-full text-12 vault-search-input"
                 />
               </div>
 
-              <div class="ledger-list-container">
-                {#if filteredLedgerFiles().length === 0}
-                  <div class="ledger-empty">
+              <div class="vault-list-container">
+                {#if filteredVaultFiles().length === 0}
+                  <div class="vault-empty">
                     No .raa reports found.
                   </div>
                 {:else}
-                  {#each filteredLedgerFiles() as file}
+                  {#each filteredVaultFiles() as file}
                     <div
-                      class="ledger-row"
-                      class:selected={selectedLedgerPath === file.path}
-                      onclick={() => selectLedgerFile(file.path)}
+                      class="vault-row"
+                      class:selected={selectedVaultPath === file.path}
+                      onclick={() => selectVaultFile(file.path)}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          selectLedgerFile(file.path);
+                          selectVaultFile(file.path);
                         }
                       }}
                       role="button"
@@ -1242,17 +1264,17 @@
                         <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
                           {file.has_violation ? "🚨" : "🛡️"}
                         </span>
-                        <span class="flex-1 text-left text-11 monospace text-ellipsis ledger-item-name">
+                        <span class="flex-1 text-left text-11 monospace text-ellipsis vault-item-name">
                           {file.name}
                         </span>
                       </div>
 
                       <!-- Bottom line: date (left) + trashcan (right) -->
-                      <div class="ledger-item-date">
+                      <div class="vault-item-date">
                         <span>{file.modified}</span>
                         <button
-                          class="ledger-delete-btn"
-                          onclick={(e) => { e.stopPropagation(); requestDeleteLedger(file); }}
+                          class="vault-delete-btn"
+                          onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
                           title="Delete this report"
                         >
                           🗑
@@ -1265,19 +1287,19 @@
             </div>
 
             <!-- Detail Pane -->
-            <div class="ledger-detail ledger-panel">
-              {#if !selectedLedgerPath}
-                <div class="ledger-empty">
+            <div class="vault-detail vault-panel">
+              {#if !selectedVaultPath}
+                <div class="vault-empty">
                   Select a report from the left to view its forensic details.
                 </div>
               {:else}
-                <div class="ledger-meta">
-                  <strong>{selectedLedgerPath.split('/').pop()}</strong>
+                <div class="vault-meta">
+                  <strong>{selectedVaultPath.split('/').pop()}</strong>
                 </div>
 
-                {#if selectedLedgerContent}
-                  {#each getReportSegments(selectedLedgerContent) as segment}
-                    <div class="ledger-incident-card">
+                {#if selectedVaultContent}
+                  {#each getReportSegments(selectedVaultContent) as segment}
+                    <div class="vault-incident-card">
                       <pre class="raw-forensics raw-forensics-no-margin">{segment}</pre>
                     </div>
                   {/each}
@@ -1308,7 +1330,7 @@
                               {#if entry.status === 'pending'}
                                 <span class="dna-status pending" title="Computing SHA-256 of file on disk right now...">⏳</span>
                               {:else if entry.status === 'match'}
-                                <span class="dna-status match" title="File on disk matches the exact hash recorded in this ledger entry">✅</span>
+                                <span class="dna-status match" title="File on disk matches the exact hash recorded in this vault entry">✅</span>
                               {:else if entry.status === 'mismatch'}
                                 <span class="dna-status mismatch" title="Current file content on disk does NOT match the hash recorded here — possible tampering, edit, or different version">❌</span>
                               {:else if entry.status === 'not_found'}
@@ -1335,7 +1357,7 @@
                               </button>
 
                               {#if !entry.status || entry.status === 'not_found' || entry.status === 'error'}
-                                <button class="dna-verify-single" onclick={() => verifySingleHash(i)} title="Re-compute SHA-256 of this file now and compare against the ledger record">
+                                <button class="dna-verify-single" onclick={() => verifySingleHash(i)} title="Re-compute SHA-256 of this file now and compare against the vault record">
                                   Verify
                                 </button>
                               {:else}
@@ -1362,7 +1384,22 @@
         </section>
       {/if}
       
-      {#if currentReport.verdict}
+      {#if viewedFromFeed}
+        <div class="glass-vault viewed-from-feed">
+          <div class="vault-header">
+            <span class="v-badge">FROM FEED</span>
+            <span class="v-target">VIEWING: {viewedFromFeed.text}</span>
+          </div>
+      
+          <div class="vault-body">
+            <pre class="raw-forensics">{viewedFromFeed.content}</pre>
+          </div>
+      
+          <button class="vault-close" onclick={() => viewedFromFeed = null}
+            >X CLOSE VIEW</button
+          >
+        </div>
+      {:else if currentReport.verdict}
         <div class="glass-vault">
           <div class="vault-header" class:error={currentReport.is_error}>
             <span class="v-badge"
@@ -1377,7 +1414,11 @@
             <pre class="raw-forensics">{currentReport.reasoning}</pre>
           </div>
       
-          <button class="vault-close" onclick={resetResults}
+          <button class="vault-close" onclick={() => {
+            currentReport = { verdict: "", reasoning: "", target_name: "", is_error: false };
+            certMsg = "";
+            viewedFromFeed = null;
+          }}
             >X CLOSE VAULT</button
           >
         </div>
@@ -1396,10 +1437,10 @@
               <span class="delete-warning">This action cannot be undone.</span>
             </div>
             <div class="delete-confirm-actions">
-              <button class="delete-btn cancel" onclick={cancelDeleteLedger}>
+              <button class="delete-btn cancel" onclick={cancelDeleteVaultFile}>
                 Cancel
               </button>
-              <button class="delete-btn confirm" onclick={confirmDeleteLedger}>
+              <button class="delete-btn confirm" onclick={confirmDeleteVaultFile}>
                 Yes, Delete
               </button>
             </div>
