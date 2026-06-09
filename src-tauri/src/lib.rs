@@ -573,9 +573,7 @@ async fn audit_command(
     model_name: String,
     vault_root_path: String,
 ) -> Result<RAAReport, String> {
-    eprintln!("[RAA-ORACLE] audit_command called with command: {}", command_str);
     let hash = get_content_hash(&command_str);
-    eprintln!("[RAA-ORACLE] computed hash: {}", hash);
 
     // Respect user-selected vault (handles ~ correctly)
     // Terminal command audits (the master "Bible") now live under RAA-Vault/Audit/
@@ -583,11 +581,8 @@ async fn audit_command(
     let bible_path = bible_dir.join("Gatekeeper-master-terminal-history.raa");
 
     if let Some(cached) = read_entry_from_disk(&bible_path, &hash) {
-        eprintln!("[RAA-ORACLE] BIBLE CACHE HIT for this exact command hash. Returning cached result without calling LLM.");
         return Ok(cached);
     }
-
-    eprintln!("[RAA-ORACLE] No bible cache hit. Calling LLM oracle now... base_url={}", base_url);
 
     let report = call_llm_auditor(
         &command_str,
@@ -597,8 +592,6 @@ async fn audit_command(
         &command_str,
     )
     .await?;
-
-    eprintln!("[RAA-ORACLE] LLM call returned. verdict={}, reasoning_len={}", report.verdict, report.reasoning.len());
 
     let path = log_to_raa("audit", &command_str, &hash, &report.reasoning, &vault_root_path);
     Ok(read_entry_from_disk(&path, &hash).unwrap_or(report))
@@ -1629,11 +1622,11 @@ async fn list_vault_files(vault_root_path: String) -> Result<Vec<VaultFile>, Str
 
     // Collect from the new operation-specific roots (Audit/Analyze/Archive/Certify)
     // so that terminal masters, single-file reports, and job-folder contents are all discovered.
+    // We always reference the typed subs so that reports under
+    // custom roots or on initial launch are reliably found once the subs are statically created.
     for op in ["Audit", "Analyze", "Archive", "Certify"] {
         let op_root = audit_root.join(op);
-        if op_root.exists() {
-            collect_raa_files(&op_root, &mut files);
-        }
+        collect_raa_files(&op_root, &mut files);
     }
 
     // Newest first

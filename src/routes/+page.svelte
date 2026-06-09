@@ -146,6 +146,7 @@
   async function initializeDefaultVaultOnFirstRun() {
     try {
       const defaultPath: string = await invoke("get_default_vault_path");
+      // Use camelCase key (Tauri convention for this project's commands).
       await invoke("create_vault_directory", { rootPath: defaultPath });
 
       const parent = normalizeVaultPath(defaultPath);
@@ -175,16 +176,27 @@
     if (selected && !Array.isArray(selected)) {
       // Always normalize through the central function
       vaultRootPath = normalizeVaultPath(selected);
+      // Statically create the 4 typed subs under this custom root immediately
+      // (so the vault finder/list can reference them even before any job runs).
+      invoke("create_vault_directory", { rootPath: vaultRootPath }).catch((e) =>
+        console.error("Failed to create subs under newly selected custom root:", e)
+      );
     }
   }
 
   async function setDefaultVault() {
     try {
       const defaultPath: string = await invoke("get_default_vault_path");
+      // Use camelCase key (Tauri convention for this project's commands).
       await invoke("create_vault_directory", { rootPath: defaultPath });
 
       const parent = normalizeVaultPath(defaultPath);
       vaultRootPath = parent;
+
+      // Also ensure subs are (re)created under the default (in case custom was cleared).
+      invoke("create_vault_directory", { rootPath: parent }).catch((e) =>
+        console.error("Failed to ensure subs after reset to default:", e)
+      );
 
       console.log("Default vault location reset to:", parent);
     } catch (err) {
@@ -259,11 +271,20 @@
               liveFeed[existingIndex] = { ...liveFeed[existingIndex], text };
               liveFeed = liveFeed; // trigger update
               scrollToBottom(rightScrollContainer);
+              // Final manifest written (end of job) → (re)populate Forensic Vault so any
+              // new per-file *.raa reports created inside dated job folders under the subs
+              // (Certify/Archive etc.) appear in the main vault browser list.
+              loadVaultData();
               return;
             }
           }
           liveFeed = [...liveFeed, { text, fullPath: path }];
           scrollToBottom(rightScrollContainer);
+          if (status === "ControlManifest") {
+            // Initial manifest written early in a job — kick an update so the vault list
+            // reflects the new job folder artifacts promptly.
+            loadVaultData();
+          }
         } else if (status === "Skipped" || status === "SkippedReport") {
           // Stage 2: show skipped in the right pane (grayed out, 🚫 icon)
           // They appear when the early "Skipped" emit fires (before LLM work)
@@ -275,6 +296,43 @@
       });
     }
     setupListener();
+
+    // === Static creation of the 4 typed subs (Audit/Analyze/Archive/Certify) on "initial launch" ===
+    // "Initial launch" is only asserted if:
+    //   - the typed sub directories do not exist yet under the RAA-Vault, OR
+    //   - there is no custom directory set (use the built-in default).
+    // Even when a custom directory *is* set, that custom root becomes the base,
+    // and we still create the 4 subs under its RAA-Vault so the finder/list can
+    // reliably reference them (no more skipping due to !exists or timing).
+    // This is the static/"our" structure the app owns for the vault finder.
+    // We do this early (before the first loadVaultData) so the structure is
+    // guaranteed when the Forensic Vault list scans.
+    (async () => {
+      try {
+        const hasCustom = !!vaultRootPath;
+        const effectiveRootForCreation = vaultRootPath; // if falsy, Rust create will use its internal default
+
+        // Always ensure the root + 4 subs exist for the effective root (default or the user's custom).
+        // Use camelCase key (Tauri convention).
+        await invoke("create_vault_directory", { rootPath: effectiveRootForCreation });
+
+        // Assert "initial launch" (for the UI success message / flag) only under the requested conditions.
+        if (!hasCustom) {
+          defaultVaultInitializedThisSession = true;
+          console.log("Initial launch (no custom root): statically created RAA-Vault + Audit/Analyze/Archive/Certify subs.");
+        } else {
+          console.log("Launch with custom root: ensured Audit/Analyze/Archive/Certify subs under", vaultRootPath);
+        }
+      } catch (err) {
+        console.error("Failed to statically create vault subs on initial launch:", err);
+      }
+
+      // Now do the initial population of the Forensic Vault list (reports under subs).
+      // Because the subs are guaranteed, list_vault_files (which now always references the 4 ops)
+      // should discover any .raa files that exist under them / job folders.
+      loadVaultData();
+    })();
+
     return () => {
       if (unlisten) unlisten();
     };
@@ -294,13 +352,13 @@
     viewedFromFeed = null;
   }
 
-  async function viewFeedItem(item) {
+  async function viewFeedItem(item: { text: string; skipped?: boolean; fullPath?: string }) {
     if (!item.fullPath) return;
     try {
-      const content = await invoke("read_single_vault_file", { fullPath: item.fullPath });
+      const content = await invoke<string>("read_single_vault_file", { fullPath: item.fullPath });
       viewedFromFeed = {
         text: item.text,
-        content: content,
+        content,
         isSkipped: item.skipped,
       };
       // Do not overwrite the main currentReport (the overall job result)
@@ -477,6 +535,7 @@
     // Ensure the vault directory exists.
     // We now prefer having a real path, but still support the empty string for default.
     try {
+      // Use camelCase key (Tauri maps Rust `root_path` param to `rootPath` in the JS invoke).
       await invoke("create_vault_directory", { rootPath: vaultRootPath });
     } catch (err) {
       console.error("Failed to ensure vault directory:", err);
@@ -590,25 +649,31 @@
         // 2. LAP TICK: Time to prepare the job
         stopHandoffTimer();
         isProcessing = true;
-        currentReport = await invoke("scan_compressed_archive", {
+        const archiveResult = await invoke<any>("scan_compressed_archive", {
           zipPath: selected,
           allowedExtensions: allowedExts,
           baseUrl,
           modelName,
           vaultRootPath
         });
+
+        // Use the same top-of-app toaster pattern as Certify for the overall result.
+        // Do not set currentReport (which would pop the big glass overlay with "last file" details).
+        // The live feed in the Archive tab shows the per-file details.
+        lastCertifySuccess = !archiveResult.is_error;
+        if (archiveResult.is_error) {
+          certMsg = archiveResult.verdict || "VIOLATION FOUND";
+        } else {
+          certMsg = archiveResult.verdict || "SAFE";
+        }
         // 3. COMPLETION: The Oracle has spoken
         stopTotalTimer();
       }
     } catch (err) {
       stopHandoffTimer();
       stopTotalTimer();
-      currentReport = {
-        verdict: "Error",
-        reasoning: String(err),
-        target_name: "Archive",
-        is_error: true,
-      };
+      certMsg = String(err);
+      lastCertifySuccess = false;
     } finally {
       isProcessing = false;
     }
@@ -661,10 +726,13 @@
       // Ensure the vault directory exists before listing (important for default vault case)
       await ensureVault();
 
-      vaultFiles = await invoke("list_vault_files", { vaultRootPath });
-      // NOTE: Current implementation is flat (only top-level .raa files in vault root).
-      // Job folder navigation (RAA-Vault/JobName-.../) is tabled until ~RAA-CONTROL-Manifest.log is finalized.
-      // See TODO in Rust list_vault_files and RAA-NEWPATH-FORWARD.txt.
+      vaultFiles = await invoke("list_vault_files", { vaultRootPath: vaultRootPath });
+
+      // list_vault_files (Rust) + collect_raa_files now scans the operation sub-roots
+      // (Audit / Analyze / Archive / Certify) and recurses into dated job folders
+      // to discover all .raa reports written under the new granular structure.
+      // The UI shows a flat list of all discovered reports (full tree navigation of
+      // job folders as containers is still tabled — see RAA-NEWPATH-FORWARD.txt).
       // Clear selection when loading fresh data
       selectedVaultPath = "";
       selectedVaultContent = "";
@@ -757,6 +825,27 @@
     if (!vaultSearch.trim()) return vaultFiles;
     const q = vaultSearch.toLowerCase();
     return vaultFiles.filter((f) => f.name.toLowerCase().includes(q));
+  }
+
+  // Group reports by the typed sub-directory (Certify, Archive, etc.) so the
+  // Forensic Vault acts more like a finder showing the directory structure
+  // under RAA-Vault.
+  function getGroupedVaultReports() {
+    const ops = ['Certify', 'Archive', 'Analyze', 'Audit'];
+    const groups: Record<string, any[]> = { Certify: [], Archive: [], Analyze: [], Audit: [], Other: [] };
+    for (const f of filteredVaultFiles()) {
+      const p = (f.path || '').toString();
+      let placed = false;
+      for (const op of ops) {
+        if (p.includes(`/${op}/`)) {
+          groups[op].push(f);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) groups.Other.push(f);
+    }
+    return groups;
   }
 
   async function runIntegrityCheck() {
@@ -1143,7 +1232,10 @@
               <h4 class="filter-title">📁 RAA Vault Location</h4>
               <p class="filter-hint">
                 The vault is always stored inside a folder named <strong>RAA-Vault</strong>. 
-                When no custom root is selected, it uses <code>~/Documents/RAA-Vault</code> by default (created automatically on first use).
+                The 4 typed subs (Audit / Analyze / Archive / Certify) + any dated job folders are statically created 
+                under it on initial launch (or when no custom root is set, or when the subs are missing). 
+                Even with a custom root selected, that root becomes the base and the subs are created there.
+                When no custom root is selected, it uses <code>~/Documents/RAA-Vault</code> by default.
               </p>
               <div class="flex-col gap-8">
                 <!-- Current Vault Status -->
@@ -1230,58 +1322,92 @@
           <div class="flex gap-8 mt-10">
             <!-- File List -->
             <div class="vault-panel vault-panel-fixed">
-              <div class="vault-header">
+              <div class="vault-header" style="display:flex; align-items:center; gap:6px;">
                 <input
                   type="text"
                   placeholder="Filter reports..."
                   bind:value={vaultSearch}
                   class="w-full text-12 vault-search-input"
+                  style="flex:1; min-width:0;"
                 />
+                <button
+                  onclick={() => loadVaultData()}
+                  disabled={isLoadingVault}
+                  title={isLoadingVault ? "Scanning vault..." : "Refresh vault reports (re-scan subs + job folders)"}
+                  style="font-size:11px; line-height:1; padding:1px 6px; cursor:pointer; border:1px solid #ccc; background:#f8f8f8; border-radius:3px; flex-shrink:0;"
+                >{isLoadingVault ? "..." : "⟳"}</button>
               </div>
 
               <div class="vault-list-container">
-                {#if filteredVaultFiles().length === 0}
-                  <div class="vault-empty">
-                    No .raa reports found.
-                  </div>
+                {#if isLoadingVault}
+                  <div class="vault-empty">Loading reports from vault...<br><span style="font-size:9px;opacity:0.7;">{displayVaultPath}</span></div>
                 {:else}
-                  {#each filteredVaultFiles() as file}
-                    <div
-                      class="vault-row"
-                      class:selected={selectedVaultPath === file.path}
-                      onclick={() => selectVaultFile(file.path)}
-                      onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          selectVaultFile(file.path);
-                        }
-                      }}
-                      role="button"
-                      tabindex="0"
-                    >
-                      <!-- Top line: icon + filename (max room for long names) -->
-                      <div class="flex items-center gap-4" style="padding-right: 8px;">
-                        <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
-                          {file.has_violation ? "🚨" : "🛡️"}
-                        </span>
-                        <span class="flex-1 text-left text-11 monospace text-ellipsis vault-item-name">
-                          {file.name}
-                        </span>
-                      </div>
 
-                      <!-- Bottom line: date (left) + trashcan (right) -->
-                      <div class="vault-item-date">
-                        <span>{file.modified}</span>
-                        <button
-                          class="vault-delete-btn"
-                          onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
-                          title="Delete this report"
-                        >
-                          🗑
-                        </button>
+
+                  {@const groups = getGroupedVaultReports()}
+                  {@const hasAny = filteredVaultFiles().length > 0}
+                  {#if !hasAny}
+                    <div class="vault-empty">
+                      No .raa reports found.<br>
+                      <span style="font-size:9px;opacity:0.7;">Scanned: {displayVaultPath} (and Audit/Analyze/Archive/Certify subs + job folders)</span>
+                    </div>
+                  {/if}
+
+                  <!-- Render the 4 subs as visible "directories" in the finder.
+                       Reports are grouped under their sub so the structure under RAA-Vault is visible. -->
+                  {#each ['Certify', 'Archive', 'Analyze', 'Audit'] as op}
+                    {@const files = groups[op] || []}
+                    <div class="vault-sub">
+                      <div class="vault-sub-header">
+                        📁 {op} <span style="font-weight: normal; color: #888;">({files.length})</span>
                       </div>
+                      {#if files.length === 0}
+                        <div class="vault-sub-empty">(no reports yet)</div>
+                      {:else}
+                        {#each files as file}
+                          <div
+                            class="vault-row"
+                            class:selected={selectedVaultPath === file.path}
+                            onclick={() => selectVaultFile(file.path)}
+                            onkeydown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                selectVaultFile(file.path);
+                              }
+                            }}
+                            role="button"
+                            tabindex="0"
+                            style="border-top: 1px solid #eee;"
+                          >
+                            <!-- Top line: icon + filename -->
+                            <div class="flex items-center gap-4" style="padding-right: 8px;">
+                              <span class="text-12" style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                                {file.has_violation ? "🚨" : "🛡️"}
+                              </span>
+                              <span class="flex-1 text-left text-11 monospace text-ellipsis vault-item-name">
+                                {file.name}
+                              </span>
+                            </div>
+
+                            <!-- Bottom line: date + trash -->
+                            <div class="vault-item-date">
+                              <span>{file.modified}</span>
+                              <button
+                                class="vault-delete-btn"
+                                onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
+                                title="Delete this report"
+                              >
+                                🗑
+                              </button>
+                            </div>
+                          </div>
+                        {/each}
+                      {/if}
                     </div>
                   {/each}
+
+
+
                 {/if}
               </div>
             </div>

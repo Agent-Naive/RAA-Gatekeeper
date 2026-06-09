@@ -874,6 +874,32 @@
   max-height: 420px;
 }
 
+/* Vault sub-directory grouping (for Forensic Vault finder to show structure) */
+.vault-sub {
+  margin: 4px 0;
+  border: 1px solid #222;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vault-sub-header {
+  background: #1a1a1a;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #444;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vault-sub-empty {
+  padding: 2px 6px;
+  font-size: 9px;
+  color: #999;
+  font-style: italic;
+}
+
 /* =========================================
    Layout & Utility Classes (for reducing inline styles)
    ========================================= */
