@@ -487,6 +487,71 @@ Excellent re-acquisition and focus switch. The project now has strong, self-cont
 Future task logged: Later revamp **ALL Integrity checks** for uniformity in structure and execution (see added item #9 above, ROADMAP.md "Known Polish Items", and new section 11 in VAULT_ARCHITECTURE.md). This is explicitly decoupled from the .raa data/reports themselves and focused on the Integrity Guard dashboard's internal consistency.
 
 ---
-**End of 2026-06-06 Review**
+**2026-06-10 Session Review (Current Work)**
+
+**Major Focus Areas:**
+- **Preservation of Historical ZIP Bucketing Logic in Certify**: Created dedicated `CERTIFY_ZIP_BUCKETING.md` file. This captures the exact procedures for how .zip files were handled/filled in the Certify routine:
+  - Special FileJob construction (hash="ZIP", size=0, content="") during jobs collection.
+  - Forcing ZIPs into their own dedicated singleton buckets (the `if job.hash == "ZIP"` rule that flushed pending buckets and isolated them).
+  - Later container detection (`is_archive_container`) and override to produce the special "ARCHIVE CONTAINER DETECTED DURING CERTIFY" report with `ACTION:ARCHIVE_AUDIT:` link.
+- **Purge of ZIP Routines from Active Certify Path**: Removed the above special ZIP handling from `generate_manifest` while preserving bucketing for all uncompressed/regular files:
+  - No more special FileJob for .zip in the collection phase.
+  - Removed the dedicated-bucket forcing rule from the bucketing loop.
+  - Removed the is_archive_container branching from the regular per-file report writing.
+  - ZIPs encountered during Certify are now collected separately (`zip_paths`) and written directly as clean container reports (no participation in main bucketing or Oracle calls during Certify).
+  - This reduces token waste (no unnecessary Oracle calls for containers when a full separate Archive audit is recommended) and keeps the Certify path focused on loose files.
+  - The dedicated Archive path (`scan_compressed_archive`) remains the proper place for deep per-file ZIP analysis (with its own job folder under /Archive/).
+- **UI Label Cleanup**: Renamed the Stage 2 right-pane comfort feed from "Just Done" / "What I Just Did" to "COMPLETED" across the board:
+  - Updated visible `<h4>` headers and associated HTML comments in both Certify and Archive dual-pane sections.
+  - Updated all related code comments (in +page.svelte listener, launch function, lib.rs emit logic).
+  - Propagated the change to ROADMAP.md, VAULT_ARCHITECTURE.md, PROJECT_MEMORY.md, and src/app.css for consistency.
+  - The feed still functions as the live emission log for reports and manifests.
+- **Dev-Only Debug Controls**: Added a new section in the Settings page (visible only when `isDev` / localhost):
+  - Independent toggles for `[RAA]` operational logs (manifest/report writing, vault tracing, job folder creation) and `[RAA-ORACLE]` verbose LLM tracing.
+  - Persisted via localStorage (`raa_debug_raa`, `raa_debug_oracle`).
+  - Flags are passed on every major invoke (`generate_manifest`, `scan_compressed_archive`, `audit_command`, `scan_file_integrity`).
+  - All relevant `eprintln!` statements are now gated behind the respective boolean (plus the `debug_raa`/`debug_oracle` command parameters).
+  - This gives precise, individual control while keeping debug output strictly dev-only.
+- **Full GitHub Push as Backup**: Performed a complete push (`git add -A`, detailed commit `c89c91b`, `git push origin main`) before any major vault browser work. Working tree was clean. Commit message captured the preservation, purge, rename, debug controls, and supporting doc/code updates.
+- **Vault Browser Planning Discussions**:
+  - Confirmed preference for using `~RAA-CONTROL-Manifest.log` as the primary "root designer" for the vault structure (leverages its guaranteed position at the top of every dated job folder + its inventory/hierarchy data).
+  - Decision to start with Phase 2 (job-folder tree awareness / structural browser) for a cleaner experience, explicitly skipping Phase 1 items like per-row "Reveal in Finder" buttons.
+  - Phase 1 polish (cards, search improvements, DNA visibility, etc.) can be backtracked and added selectively once the visual/tree structure feels right.
+  - This approach keeps the UI less cluttered while directly advancing the "Rich Vault Browser" goal (searchable, parsed incident cards, per-file DNA verification) and un-tabling progress toward Stage 5.
+- **Related Analysis & Insights**:
+  - Confirmed that Archive routines still lack bucketing (one file = one individual LLM call), which explains why ZIP scans feel slower compared to Certify's bin-packing for regular files.
+  - The Integrity Guard "🪣 Bucket Traversal" check remains a placeholder (simple WalkDir existence test, not real validation of the BUCKET_LIMIT logic).
+  - All work maintains the permanent anchors (read-only, advisory-only, dynamic base URL, canonicalize paths, user vaultRootPath, etc.).
+
+**Updates to Supporting Files**:
+- New focused preservation file: `CERTIFY_ZIP_BUCKETING.md` (self-contained reference for the purged logic).
+- Multiple updates to ROADMAP.md (renames, status notes, tabled section).
+- Updates to VAULT_ARCHITECTURE.md (cross-references, status).
+- Minor supporting changes in src-tauri/src/lib.rs (partitioning for ZIPs, simplified regular report writing, new container handling block, debug flag threading, comment cleanups).
+- UI and CSS adjustments for the COMPLETED label.
+
+**Git & Process Discipline**:
+- Followed rules: local commits frequent, one solid push at a clear checkpoint (pre-vault-browser work), detailed commit message.
+- No information was purged from PROJECT_MEMORY.md or VAULT_ARCHITECTURE.md (only appended).
+
+**Open Questions / Next Priorities (Carried Forward + New)**:
+- Proceed with Rich Vault Browser implementation using ~RAA-CONTROL-Manifest.log as structural root (Phase 2 tree first).
+- Decide which (if any) Phase 1 items to re-introduce after the visual structure is solid (e.g., selective Reveal actions, improved cards).
+- Bring real bucketing/bin-packing to the Archive path (to address ZIP scan performance).
+- Continue polishing: Settings page reorg (still mandatory), make Integrity checks reflect real state, uniform Integrity Guard revamp.
+- Monitor token usage / comment bloat in active code (new dedicated preservation files like CERTIFY_ZIP_BUCKETING.md are the preferred pattern going forward).
+- Revisit tabled suggestions (e.g., dev-only tree-shaking, version sync) only after explicit user approval in a dedicated discussion.
+
+**Recommendations for Future Sessions**:
+- Re-read the full PERMANENT KNOWLEDGE section + the most recent review (this one + 2026-06-06).
+- Always consult CERTIFY_ZIP_BUCKETING.md before touching any remaining or future ZIP/container logic in Certify vs. Archive paths.
+- Re-read ROADMAP.md "Granular Vault Architecture" section and the full VAULT_ARCHITECTURE.md before vault UI or bucketing changes.
+- Maintain the clean separation: Certify focuses on loose files + container flagging; dedicated Archive for deep ZIP analysis.
+
+**Overall Feeling:**  
+Strong progress on cleanup, preservation discipline, and architectural hygiene. The project now has even better long-term memory separation (main architecture doc + focused historical files like CERTIFY_ZIP_BUCKETING.md). The recent push provides a solid backup. Ready to move into the visual/structural work on the Rich Vault Browser with the ~RAA-CONTROL-Manifest.log as the root, taking a Phase-2-first approach for cleanliness. Context is fully captured for any future reset.
+
+---
+**End of 2026-06-10 Review**
 
 ---
