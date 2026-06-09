@@ -654,10 +654,11 @@
   background: transparent;
   border: none;
   border-bottom: 1px solid #1f1f1f;
-  padding: 6px 8px;
+  padding: 3px 6px;
   cursor: pointer;
   transition: background 0.1s;
   font-size: 11px;
+  line-height: 1.1;
 }
 
 .vault-row:hover {
@@ -744,13 +745,13 @@
 }
 
 .vault-item-date {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 10px;
+  /* Compact second line under primary (trash+icon+name). Tucked to align under filename for shrunk visual. */
+  display: block;
+  font-size: 9px;
   color: #666;
-  margin-top: 3px;
-  padding-right: 8px; /* match the right padding of .vault-header and the filter input box for visual alignment */
+  margin-top: 1px;
+  padding-left: 24px;
+  line-height: 1;
 }
 
 /* Dual Pane Monitor (used in Archive and Certify tabs) */

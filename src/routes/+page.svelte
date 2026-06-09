@@ -1565,15 +1565,8 @@
                                 tabindex="0"
                                 style="border-top: 1px solid #eee; font-weight: 600;"
                               >
-                                <div class="flex items-center gap-4" style="padding-right: 8px;">
-                                  <span>📋</span>
-                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
-                                    {entry.manifest.name}
-                                  </span>
-                                </div>
-
-                                <div class="vault-item-date">
-                                  <span>{entry.manifest.modified}</span>
+                                <!-- Compact line: trash first, then icon, then name (to shrink visual) -->
+                                <div style="display:flex; align-items:center; gap:3px;">
                                   <button
                                     class="vault-delete-btn"
                                     onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(entry.manifest); }}
@@ -1581,6 +1574,14 @@
                                   >
                                     🗑
                                   </button>
+                                  <span>📋</span>
+                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {entry.manifest.name}
+                                  </span>
+                                </div>
+                                <!-- Compact date line below (trash moved to primary for density) -->
+                                <div class="vault-item-date">
+                                  {entry.manifest.modified}
                                 </div>
                               </div>
                             {/if}
@@ -1600,19 +1601,8 @@
                                 tabindex="0"
                                 style="border-top: 1px solid #eee;"
                               >
-                                <!-- Top line: icon + filename -->
-                                <div class="flex items-center gap-4" style="padding-right: 8px;">
-                                  <span style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
-                                    {file.has_violation ? "🚨" : "🛡️"}
-                                  </span>
-                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
-                                    {file.name}
-                                  </span>
-                                </div>
-
-                                <!-- Bottom line: date + trash -->
-                                <div class="vault-item-date">
-                                  <span>{file.modified}</span>
+                                <!-- Compact line: trash first, then threat icon, then name (to shrink visual) -->
+                                <div style="display:flex; align-items:center; gap:3px;">
                                   <button
                                     class="vault-delete-btn"
                                     onclick={(e) => { e.stopPropagation(); requestDeleteVaultFile(file); }}
@@ -1620,6 +1610,16 @@
                                   >
                                     🗑
                                   </button>
+                                  <span style="color: {file.has_violation ? '#f87171' : '#4ade80'};">
+                                    {file.has_violation ? "🚨" : "🛡️"}
+                                  </span>
+                                  <span class="flex-1 text-left monospace text-ellipsis vault-item-name">
+                                    {file.name}
+                                  </span>
+                                </div>
+                                <!-- Compact date line below (e.g. 20260609-102727) -->
+                                <div class="vault-item-date">
+                                  {file.modified}
                                 </div>
                               </div>
                             {/each}

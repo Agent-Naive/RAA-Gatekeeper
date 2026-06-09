@@ -1736,7 +1736,7 @@ fn collect_raa_files(dir: &Path, files: &mut Vec<VaultFile>) {
                     .and_then(|m| m.modified().ok())
                     .and_then(|t| {
                         let datetime: chrono::DateTime<chrono::Local> = t.into();
-                        Some(datetime.format("%Y-%m-%d %H:%M").to_string())
+                        Some(datetime.format("%Y%m%d-%H%M%S").to_string())
                     })
                     .unwrap_or_else(|| "unknown".into());
 
